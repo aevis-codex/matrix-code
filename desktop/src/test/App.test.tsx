@@ -1562,6 +1562,119 @@ describe('MatrixCode 桌面工作台', () => {
     expect(await screen.findByText('已根据当前工作台上下文生成执行建议。')).toBeTruthy();
   });
 
+  it('底部Composer会去重模型选项并在请求期间给出明确反馈', async () => {
+    const 重复模型工作台: ProjectWorkbench = {
+      ...基础工作台,
+      modelGateway: {
+        ...基础工作台.modelGateway,
+        bindings: [
+          基础工作台.modelGateway.bindings[0],
+          {
+            ...基础工作台.modelGateway.bindings[0],
+            role: 'DEVELOPER',
+            providerId: 'deepseek',
+            model: 'deepseek-chat'
+          },
+          {
+            ...基础工作台.modelGateway.bindings[0],
+            role: 'TESTER',
+            providerId: 'deepseek',
+            model: 'deepseek-chat'
+          },
+          基础工作台.modelGateway.bindings[0]
+        ]
+      }
+    };
+    let 完成请求: (value: Awaited<ReturnType<typeof createRoleModelRequest>>) => void = () => {};
+
+    加载项目工作台.mockResolvedValue(重复模型工作台);
+    创建角色模型请求.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          完成请求 = resolve;
+        }) as ReturnType<typeof createRoleModelRequest>
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText('支付系统重构')).toBeTruthy();
+    const Composer = within(screen.getByRole('form', { name: 'Agent 对话 Composer' }));
+    const 模型选择 = Composer.getByLabelText('当前模型') as HTMLSelectElement;
+    const 选项值 = Array.from(模型选择.options).map((option) => option.value);
+    expect(选项值).toEqual(Array.from(new Set(选项值)));
+
+    fireEvent.change(screen.getByLabelText('Agent 对话输入'), {
+      target: { value: '请用一句话说明下一步' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '发送给角色智能体' }));
+
+    expect((await screen.findByRole('button', { name: '正在发送给角色智能体' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/正在调用模型/)).toBeTruthy();
+
+    await act(async () => {
+      完成请求({
+        requestId: 'composer-request-pending',
+        answer: '已收到请求。',
+        contextManifest: {
+          role: 'PRODUCT',
+          blocks: [],
+          omittedTypes: []
+        },
+        usage: 基础工作台.modelGateway.recentRequests[0].usage,
+        binding: 基础工作台.modelGateway.bindings[0],
+        promptContract: {
+          role: 'PRODUCT',
+          model: 'matrixcode-local-product',
+          toolContractVersion: 'tools-v1',
+          systemPrefix: 'stable prefix',
+          stablePrefixHash: 'fp-cache-001',
+          estimatedStablePrefixTokens: 128
+        },
+        createdAt: '2026-06-25T08:22:00Z'
+      });
+    });
+  });
+
+  it('模型长回复默认摘要展示并支持展开全文', async () => {
+    const 长回复 = `第一行结论。${'需要压缩展示的详细推理内容。'.repeat(80)}最后一句只应在展开后完整出现。`;
+    创建角色模型请求.mockResolvedValueOnce({
+      requestId: 'composer-request-long',
+      answer: 长回复,
+      contextManifest: {
+        role: 'PRODUCT',
+        blocks: [],
+        omittedTypes: []
+      },
+      usage: 基础工作台.modelGateway.recentRequests[0].usage,
+      binding: 基础工作台.modelGateway.bindings[0],
+      promptContract: {
+        role: 'PRODUCT',
+        model: 'matrixcode-local-product',
+        toolContractVersion: 'tools-v1',
+        systemPrefix: 'stable prefix',
+        stablePrefixHash: 'fp-cache-001',
+        estimatedStablePrefixTokens: 128
+      },
+      createdAt: '2026-06-25T08:23:00Z'
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText('支付系统重构')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Agent 对话输入'), {
+      target: { value: '请输出详细计划' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '发送给角色智能体' }));
+
+    expect(await screen.findByText('模型回复')).toBeTruthy();
+    const 实时预览 = within(screen.getByLabelText('实时输出预览'));
+    expect(实时预览.getByLabelText('模型回复摘要')).toBeTruthy();
+    expect(实时预览.queryByText(长回复)).toBeNull();
+
+    fireEvent.click(实时预览.getByRole('button', { name: '展开完整回复' }));
+    expect(实时预览.getByText(长回复)).toBeTruthy();
+  });
+
   it('底部状态栏和运行中心展示真实 Agent 运行事件', async () => {
     render(<App />);
 

@@ -134,6 +134,7 @@ const localTaskRefreshIntervalMillis = 2000;
 const runtimeEventRefreshDelayMillis = 0;
 const sessionRenewCheckIntervalMillis = 60_000;
 const sessionRenewLeadMillis = 15 * 60_000;
+const modelAnswerPreviewMaxLength = 360;
 const rolePathByModelRole: Record<RoleAgentConfig['role'], string> = {
   PRODUCT: 'product',
   DEVELOPER: 'developer',
@@ -231,6 +232,14 @@ function formatModelBindingRef(binding: { providerId: string; model: string } | 
 }
 
 /**
+ * 去重模型引用，保持后端绑定顺序中的第一个有效项。
+ * 作用域：Agent Composer；场景：多个角色绑定同一供应商模型时，前端下拉只展示一次，避免 React key 冲突。
+ */
+function uniqueModelRefs(modelRefs: string[]) {
+  return Array.from(new Set(modelRefs.filter(Boolean)));
+}
+
+/**
  * 压缩实时输入摘要。
  * 作用域：大模型输出台；场景：用户在底部输入时，上方实时预览只展示低敏短摘要。
  */
@@ -240,6 +249,18 @@ function summarizeComposerDraft(draft: string) {
     return '';
   }
   return compact.length > 120 ? `${compact.slice(0, 120)}...` : compact;
+}
+
+/**
+ * 压缩模型回复预览。
+ * 作用域：大模型输出台；场景：真实模型返回长内容时，默认展示摘要，避免挤压工作台主操作区。
+ */
+function summarizeModelAnswer(answer: string) {
+  const compact = answer.trim();
+  if (compact.length <= modelAnswerPreviewMaxLength) {
+    return compact;
+  }
+  return `${compact.slice(0, modelAnswerPreviewMaxLength).trimEnd()}...`;
 }
 
 /**
@@ -666,14 +687,21 @@ function AgentOutputConsole({
   reasoningEffort: ComposerReasoningEffort;
   selectedRole: string;
 }) {
+  const [answerExpanded, setAnswerExpanded] = useState(false);
   const recentDocuments = documents.slice(0, 3);
   const recentEvents = events.slice(0, 3);
   const liveDraft = summarizeComposerDraft(composerDraft);
+  const answeredRequestId =
+    composerSubmitState.status === 'answered' ? composerSubmitState.response.requestId : composerSubmitState.status;
   const intentLabels = [
     intentState.plan ? '计划' : '',
     intentState.goal ? '目标' : '',
     intentState.tokenEconomy ? '省 token' : ''
   ].filter(Boolean);
+  const modelAnswer = composerSubmitState.status === 'answered' ? composerSubmitState.response.answer : '';
+  const modelAnswerPreview = summarizeModelAnswer(modelAnswer);
+  const modelAnswerIsLong = composerSubmitState.status === 'answered' && modelAnswerPreview !== modelAnswer.trim();
+  const displayedModelAnswer = answerExpanded || !modelAnswerIsLong ? modelAnswer.trim() : modelAnswerPreview;
   const submitStatusLabel =
     composerSubmitState.status === 'sending'
       ? '模型请求中'
@@ -684,6 +712,10 @@ function AgentOutputConsole({
           : liveDraft
             ? '草稿同步'
             : '等待输入';
+
+  useEffect(() => {
+    setAnswerExpanded(false);
+  }, [answeredRequestId]);
 
   return (
     <section className="agent-output-console" aria-label="大模型输出台">
@@ -703,9 +735,23 @@ function AgentOutputConsole({
           <em>{composerApprovalModeLabels[approvalMode]} · effort {composerReasoningEffortLabels[reasoningEffort]}</em>
         </header>
         {composerSubmitState.status === 'answered' ? (
-          <pre>{composerSubmitState.response.answer}</pre>
+          <div className="agent-live-preview__answer">
+            <pre aria-label={modelAnswerIsLong && answerExpanded ? '模型回复全文' : '模型回复摘要'}>
+              {displayedModelAnswer}
+            </pre>
+            {modelAnswerIsLong ? (
+              <button
+                aria-expanded={answerExpanded}
+                className="agent-live-preview__expand"
+                onClick={() => setAnswerExpanded((expanded) => !expanded)}
+                type="button"
+              >
+                {answerExpanded ? '收起回复' : '展开完整回复'}
+              </button>
+            ) : null}
+          </div>
         ) : composerSubmitState.status === 'sending' ? (
-          <pre>{composerSubmitState.submittedInstruction}</pre>
+          <pre>正在调用模型，等待 {currentModelRef} 返回结果...{'\n\n'}{composerSubmitState.submittedInstruction}</pre>
         ) : composerSubmitState.status === 'error' ? (
           <pre>{composerSubmitState.message}</pre>
         ) : (
@@ -846,7 +892,12 @@ function AgentComposer({
   }
 
   return (
-    <form className="agent-composer" aria-label="Agent 对话 Composer" onSubmit={(event) => void handleSubmit(event)}>
+    <form
+      aria-busy={submitting}
+      className="agent-composer"
+      aria-label="Agent 对话 Composer"
+      onSubmit={(event) => void handleSubmit(event)}
+    >
       <label className="agent-composer__input-wrap" htmlFor="agent-composer-input">
         <span className="agent-composer__prompt">›</span>
         <textarea
@@ -854,11 +905,17 @@ function AgentComposer({
           id="agent-composer-input"
           onChange={(event) => onDraftChange(event.target.value)}
           placeholder={`给${selectedRole}智能体发消息...（/ 命令 · @ 文档 · ! 终端）`}
+          readOnly={submitting}
           rows={3}
           value={draft}
         />
-        <button aria-label="发送给角色智能体" className="agent-composer__send" disabled={!canSubmit} type="submit">
-          ↑
+        <button
+          aria-label={submitting ? '正在发送给角色智能体' : '发送给角色智能体'}
+          className="agent-composer__send"
+          disabled={!canSubmit}
+          type="submit"
+        >
+          {submitting ? '…' : '↑'}
         </button>
       </label>
 
@@ -1347,7 +1404,7 @@ function App() {
     workbenchState.type === 'ready' && hasLiveLocalExecutionTask(workbenchState.workbench);
   const readyModelRefs =
     workbenchState.type === 'ready'
-      ? workbenchState.workbench.modelGateway.bindings.map((binding) => formatModelBindingRef(binding))
+      ? uniqueModelRefs(workbenchState.workbench.modelGateway.bindings.map((binding) => formatModelBindingRef(binding)))
       : [];
   const readyModelRefsKey = readyModelRefs.join('|');
 
@@ -1906,7 +1963,7 @@ function App() {
   const pendingApprovalCount = countPendingApprovals(workbench);
   const topNotification = latestVisibleNotification(runtimeNotifications, dismissedNotificationIds);
   const hasServerRuntimeNotifications = Array.isArray(workbench.runtimeNotifications);
-  const modelOptions = readyModelRefs.length ? readyModelRefs : [formatModelBindingRef(workbench.modelGateway.bindings[0])];
+  const modelOptions = readyModelRefs.length ? readyModelRefs : uniqueModelRefs([formatModelBindingRef(workbench.modelGateway.bindings[0])]);
   const currentComposerModelRef = composerModelRef || modelOptions[0];
   const composerSubmitting = composerSubmitState.status === 'sending';
 
