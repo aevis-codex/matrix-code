@@ -28,6 +28,8 @@ matrixcode:
     actor-token-secret: ${MATRIXCODE_AUTH_ACTOR_TOKEN_SECRET:}
     bootstrap-token: ${MATRIXCODE_AUTH_BOOTSTRAP_TOKEN:}
     default-token-ttl-seconds: ${MATRIXCODE_AUTH_DEFAULT_TOKEN_TTL_SECONDS:86400}
+    session-auto-renew-enabled: ${MATRIXCODE_AUTH_SESSION_AUTO_RENEW_ENABLED:true}
+    session-renew-threshold-seconds: ${MATRIXCODE_AUTH_SESSION_RENEW_THRESHOLD_SECONDS:1800}
     session-store: ${MATRIXCODE_AUTH_SESSION_STORE:memory}
     session-redis-key-prefix: ${MATRIXCODE_AUTH_SESSION_REDIS_KEY_PREFIX:matrixcode:sa-token:}
     admin-initial-password: ${MATRIXCODE_AUTH_ADMIN_INITIAL_PASSWORD:}

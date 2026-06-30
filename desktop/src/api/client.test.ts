@@ -1447,15 +1447,11 @@ describe('角色工作台 API 客户端', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    const token = await loginActorSession(
-      'demo',
-      { username: 'user-dev', password: 'secret', ttlSeconds: 3600 },
-      'http://localhost:8080'
-    );
+    const token = await loginActorSession('demo', { username: 'user-dev', password: 'secret' }, 'http://localhost:8080');
 
     expect(fetchMock).toHaveBeenCalledWith('http://localhost:8080/api/projects/demo/identity/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ username: 'user-dev', password: 'secret', ttlSeconds: 3600 }),
+      body: JSON.stringify({ username: 'user-dev', password: 'secret' }),
       headers: {
         Accept: 'application/json',
         'Content-Type': 'application/json'
@@ -1518,15 +1514,13 @@ describe('角色工作台 API 客户端', () => {
     vi.stubGlobal('fetch', fetchMock);
     localStorage.setItem('matrixcode.actorToken', 'sa-token');
 
-    const session = await renewActorSession('demo', 'user-dev', 7200, 'http://localhost:8080');
+    const session = await renewActorSession('demo', 'user-dev', 'http://localhost:8080');
 
     expect(fetchMock).toHaveBeenCalledWith('http://localhost:8080/api/projects/demo/identity/auth/session/renew', {
       method: 'POST',
-      body: JSON.stringify({ ttlSeconds: 7200 }),
       headers: {
         Accept: 'application/json',
         Authorization: 'Bearer sa-token',
-        'Content-Type': 'application/json',
         'X-MatrixCode-User-Id': 'user-dev'
       }
     });

@@ -1,6 +1,7 @@
 package com.matrixcode.common.api;
 
 import com.matrixcode.identity.api.RequestActorResolver;
+import com.matrixcode.identity.api.SaTokenActorSession;
 import com.matrixcode.identity.application.MatrixCodeAuthProperties;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -22,13 +23,16 @@ public class ApiAuthenticationConfiguration implements WebMvcConfigurer {
 
     private final MatrixCodeAuthProperties authProperties;
     private final RequestActorResolver actorResolver;
+    private final SaTokenActorSession saTokenActorSession;
 
     public ApiAuthenticationConfiguration(
             MatrixCodeAuthProperties authProperties,
-            RequestActorResolver actorResolver
+            RequestActorResolver actorResolver,
+            SaTokenActorSession saTokenActorSession
     ) {
         this.authProperties = Objects.requireNonNull(authProperties, "authProperties 不能为空");
         this.actorResolver = Objects.requireNonNull(actorResolver, "actorResolver 不能为空");
+        this.saTokenActorSession = Objects.requireNonNull(saTokenActorSession, "saTokenActorSession 不能为空");
     }
 
     /**
@@ -40,7 +44,7 @@ public class ApiAuthenticationConfiguration implements WebMvcConfigurer {
      */
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        registry.addInterceptor(new RequireSaTokenApiInterceptor(authProperties, actorResolver))
+        registry.addInterceptor(new RequireSaTokenApiInterceptor(authProperties, actorResolver, saTokenActorSession))
                 .addPathPatterns("/api/**")
                 .excludePathPatterns(PUBLIC_API_PATHS);
     }
@@ -49,13 +53,16 @@ public class ApiAuthenticationConfiguration implements WebMvcConfigurer {
 
         private final MatrixCodeAuthProperties authProperties;
         private final RequestActorResolver actorResolver;
+        private final SaTokenActorSession saTokenActorSession;
 
         private RequireSaTokenApiInterceptor(
                 MatrixCodeAuthProperties authProperties,
-                RequestActorResolver actorResolver
+                RequestActorResolver actorResolver,
+                SaTokenActorSession saTokenActorSession
         ) {
             this.authProperties = authProperties;
             this.actorResolver = actorResolver;
+            this.saTokenActorSession = saTokenActorSession;
         }
 
         /**
@@ -70,6 +77,9 @@ public class ApiAuthenticationConfiguration implements WebMvcConfigurer {
                 return true;
             }
             actorResolver.resolve(request);
+            if (authProperties.isSessionAutoRenewEnabled()) {
+                saTokenActorSession.renewIfNeeded(authProperties.defaultTokenTtl(), authProperties.sessionRenewThreshold());
+            }
             return true;
         }
     }

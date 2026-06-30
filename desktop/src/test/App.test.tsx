@@ -1445,7 +1445,19 @@ describe('MatrixCode 桌面工作台', () => {
     expect(screen.getByText('正在连接团队服务器...')).toBeTruthy();
   });
 
-  it('展示项目、全部角色、阶段状态和运行指标', async () => {
+  it('本地会话接近过期时自动按服务端窗口续期', async () => {
+    window.localStorage.setItem('matrixcode.actorToken', 'sa-token');
+    window.localStorage.setItem('matrixcode.actorTokenUserId', 'user-dev');
+    window.localStorage.setItem('matrixcode.actorTokenExpiresAt', '2026-01-01T00:00:00Z');
+
+    render(<App />);
+
+    expect(await screen.findByText('支付系统重构')).toBeTruthy();
+    await waitFor(() => expect(续期身份会话).toHaveBeenCalledWith('demo', 'user-dev'));
+    expect(window.localStorage.getItem('matrixcode.actorTokenExpiresAt')).not.toBe('2026-01-01T00:00:00Z');
+  });
+
+  it('展示项目、全部角色、阶段状态和底部状态栏', async () => {
     render(<App />);
 
     expect(await screen.findByText('支付系统重构')).toBeTruthy();
@@ -1458,28 +1470,28 @@ describe('MatrixCode 桌面工作台', () => {
     expect(角色工作区.getByRole('button', { name: '运维' })).toBeTruthy();
     expect(screen.getByLabelText('测试，当前')).toBeTruthy();
     expect(screen.getByLabelText('上线，待处理')).toBeTruthy();
-    expect(screen.getByText('缓存命中率 86%')).toBeTruthy();
-    expect(screen.getByText(/会话\s*tokens（词元）/)).toBeTruthy();
-    expect(screen.getByText(/会话\s*tokens（词元）\s*221,000/)).toBeTruthy();
-    expect(screen.getByText('文档数 0')).toBeTruthy();
-    expect(screen.getByText(/未关闭\s*Bug\s*数（缺陷）\s*0/)).toBeTruthy();
-    expect(screen.getByText('关键事件')).toBeTruthy();
-    expect(screen.getByText('当前模型')).toBeTruthy();
-    expect(screen.getAllByText(/matrixcode-local-product/).length).toBeGreaterThan(0);
-    expect(screen.getByText('缓存来源 PROVIDER')).toBeTruthy();
-    expect(screen.getByText('prefix fp-cache-001')).toBeTruthy();
-    expect(screen.getByText('缓存策略 stable-platform-prefix-v1')).toBeTruthy();
-    expect(screen.getByText('volatile role-prompt-and-dynamic-context')).toBeTruthy();
-    expect(screen.getByText('最近命中率 60%')).toBeTruthy();
-    expect(await screen.findByText('30天费用 0.198 CNY')).toBeTruthy();
-    expect(screen.getByText('30天请求 2')).toBeTruthy();
-    expect(screen.getByText('最近日 2026-06-25 · 2 次')).toBeTruthy();
-    expect(screen.getByText('主要角色 产品 · 0.128 CNY')).toBeTruthy();
+    expect(screen.getByLabelText('大模型输出台')).toBeTruthy();
+    expect(screen.getByLabelText('大模型对话台')).toBeTruthy();
+    expect(screen.getByLabelText('输出与预览')).toBeTruthy();
+    expect(screen.queryByRole('complementary', { name: '运行指标' })).toBeNull();
+    const 底部状态栏 = within(screen.getByLabelText('工作台底部状态'));
+    expect(底部状态栏.getByText('当前模型')).toBeTruthy();
+    expect(底部状态栏.getByText(/local-deterministic\s*\/\s*matrixcode-local-product/)).toBeTruthy();
+    expect(底部状态栏.getByText('运行指标')).toBeTruthy();
+    expect(底部状态栏.getByText(/请求\s*2/)).toBeTruthy();
+    expect(底部状态栏.getByText(/费用\s*0.128\s*CNY/)).toBeTruthy();
+    expect(底部状态栏.getByText(/缓存\s*86%/)).toBeTruthy();
+    expect(底部状态栏.getByText(/最近命中\s*60%/)).toBeTruthy();
+    expect(底部状态栏.getByText(/prefix\s*fp-cache-001/)).toBeTruthy();
+    expect(底部状态栏.getByText('工作摘要')).toBeTruthy();
+    expect(底部状态栏.getByText(/会话 tokens\s*221,000/)).toBeTruthy();
+    expect(底部状态栏.getByText(/文档\s*0/)).toBeTruthy();
+    expect(底部状态栏.getByText(/未关 Bug\s*0/)).toBeTruthy();
     expect(screen.getByRole('button', { name: '运行' })).toBeTruthy();
     expect(screen.queryByLabelText('本地执行代理')).toBeNull();
   });
 
-  it('右侧运行指标和运行中心展示真实 Agent 运行事件', async () => {
+  it('底部状态栏和运行中心展示真实 Agent 运行事件', async () => {
     render(<App />);
 
     expect(await screen.findByText('支付系统重构')).toBeTruthy();
@@ -1777,15 +1789,16 @@ describe('MatrixCode 桌面工作台', () => {
 
     expect(await screen.findByText('支付系统重构')).toBeTruthy();
     expect(screen.getByLabelText('Agent 运行')).toBeTruthy();
-    expect(screen.getByText('暂无 Agent 运行')).toBeTruthy();
+    const 输出台 = within(screen.getByLabelText('大模型输出台'));
+    expect(输出台.getByText('暂无 Agent 运行')).toBeTruthy();
   });
 
   it('可以通过页面配置按钮按角色标签编辑开发智能体配置', async () => {
     render(<App />);
 
     expect(await screen.findByText('支付系统重构')).toBeTruthy();
-    expect(screen.getByLabelText('运行指标')).toBeTruthy();
-    expect(screen.getByLabelText('关键事件')).toBeTruthy();
+    expect(screen.getByLabelText('工作台底部状态')).toBeTruthy();
+    expect(screen.queryByLabelText('关键事件')).toBeNull();
     expect(screen.queryByLabelText('项目配置')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: '配置' }));
@@ -1975,21 +1988,20 @@ describe('MatrixCode 桌面工作台', () => {
 
     await waitFor(() => expect(加载项目成员).toHaveBeenCalledWith('demo', 'user-product'));
     fireEvent.change(await 配置区.findByLabelText('登录用户名'), { target: { value: 'user-dev' } });
-    fireEvent.change(配置区.getByLabelText('登录有效期'), { target: { value: '3600' } });
+    expect(配置区.queryByLabelText('登录有效期')).toBeNull();
     fireEvent.change(配置区.getByLabelText('登录密码'), { target: { value: 'test-login-password' } });
     fireEvent.click(配置区.getByRole('button', { name: '登录' }));
 
     await waitFor(() => {
       expect(登录身份).toHaveBeenCalledWith('demo', {
         username: 'user-dev',
-        password: 'test-login-password',
-        ttlSeconds: 3600
+        password: 'test-login-password'
       });
     });
     expect(window.localStorage.getItem('matrixcode.actorToken')).toBe('sa-token');
     expect(window.localStorage.getItem('matrixcode.actorTokenUserId')).toBe('user-dev');
     expect(window.localStorage.getItem('matrixcode.actorTokenExpiresAt')).toBe('2026-06-27T06:00:00Z');
-    expect(await 配置区.findByText('user-dev · 有效至 2026-06-27T06:00:00Z')).toBeTruthy();
+    expect(await 配置区.findByText('user-dev · 动态续期 · 本地估算至 2026-06-27T06:00:00Z')).toBeTruthy();
 
     fireEvent.click(配置区.getByRole('button', { name: '退出登录' }));
     await waitFor(() => expect(退出身份).toHaveBeenCalledWith('demo', 'user-dev'));
@@ -2021,8 +2033,7 @@ describe('MatrixCode 桌面工作台', () => {
     await waitFor(() => {
       expect(登录身份).toHaveBeenCalledWith('demo', {
         username: 'admin',
-        password: 'admin-password',
-        ttlSeconds: 86400
+        password: 'admin-password'
       });
     });
     await waitFor(() => expect(加载项目工作台).toHaveBeenCalledWith('demo', 'admin'));
@@ -2050,7 +2061,7 @@ describe('MatrixCode 桌面工作台', () => {
     expect(await 配置区.findByText('fp-user-dev · WEB · 剩余 3600 秒')).toBeTruthy();
 
     fireEvent.click(配置区.getByRole('button', { name: '续期当前会话' }));
-    await waitFor(() => expect(续期身份会话).toHaveBeenCalledWith('demo', 'user-dev', 86400));
+    await waitFor(() => expect(续期身份会话).toHaveBeenCalledWith('demo', 'user-dev'));
     expect(加载身份会话列表).toHaveBeenLastCalledWith('demo', 'user-dev', 'user-product');
 
     fireEvent.click(配置区.getByRole('button', { name: '踢下线 user-dev' }));
@@ -2097,6 +2108,7 @@ describe('MatrixCode 桌面工作台', () => {
 
     render(<App />);
 
+    fireEvent.click(await screen.findByRole('tab', { name: '文件' }));
     const 文档交接 = within(await screen.findByLabelText('文档交接'));
     expect(文档交接.getByText('产品需求草稿')).toBeTruthy();
     expect(文档交接.getByText(/产品需求文档 · 已冻结 · v1/)).toBeTruthy();
@@ -2578,15 +2590,14 @@ describe('MatrixCode 桌面工作台', () => {
     expect(await screen.findByText('需要登录 MatrixCode')).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'user-dev' } });
-    fireEvent.change(screen.getByLabelText('登录有效期'), { target: { value: '3600' } });
+    expect(screen.queryByLabelText('登录有效期')).toBeNull();
     fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'test-login-password' } });
     fireEvent.click(screen.getByRole('button', { name: '登录并加载工作台' }));
 
     await waitFor(() => {
       expect(登录身份).toHaveBeenCalledWith('demo', {
         username: 'user-dev',
-        password: 'test-login-password',
-        ttlSeconds: 3600
+        password: 'test-login-password'
       });
     });
     expect(window.localStorage.getItem('matrixcode.actorToken')).toBe('sa-token');
@@ -2614,7 +2625,9 @@ describe('MatrixCode 桌面工作台', () => {
       { requirement: '支付失败后允许用户重新发起支付。' },
       'user-product'
     );
-    expect(await screen.findByText('产品需求草稿')).toBeTruthy();
+    fireEvent.click(await screen.findByRole('tab', { name: '文件' }));
+    const 文档交接 = within(await screen.findByLabelText('文档交接'));
+    expect(await 文档交接.findByText('产品需求草稿')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: '冻结当前 PRD' }));
 

@@ -77,7 +77,7 @@ class MatrixCodeServerApplicationTest {
         mockMvc.perform(post("/api/projects/demo/identity/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"username":"user-dev","ttlSeconds":300}
+                                {"username":"user-dev"}
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("密码不能为空"));

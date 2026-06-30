@@ -14,6 +14,8 @@ public class MatrixCodeAuthProperties {
     private String actorTokenSecret = "";
     private String bootstrapToken = "";
     private long defaultTokenTtlSeconds = 86400;
+    private boolean sessionAutoRenewEnabled = true;
+    private long sessionRenewThresholdSeconds = 1800;
     private String sessionStore = "memory";
     private String sessionRedisKeyPrefix = "matrixcode:sa-token:";
     private String adminInitialPassword = "";
@@ -60,6 +62,26 @@ public class MatrixCodeAuthProperties {
 
     public Duration defaultTokenTtl() {
         return Duration.ofSeconds(defaultTokenTtlSeconds);
+    }
+
+    public boolean isSessionAutoRenewEnabled() {
+        return sessionAutoRenewEnabled;
+    }
+
+    public void setSessionAutoRenewEnabled(boolean sessionAutoRenewEnabled) {
+        this.sessionAutoRenewEnabled = sessionAutoRenewEnabled;
+    }
+
+    public long getSessionRenewThresholdSeconds() {
+        return sessionRenewThresholdSeconds;
+    }
+
+    public void setSessionRenewThresholdSeconds(long sessionRenewThresholdSeconds) {
+        this.sessionRenewThresholdSeconds = sessionRenewThresholdSeconds < 1 ? 1800 : sessionRenewThresholdSeconds;
+    }
+
+    public Duration sessionRenewThreshold() {
+        return Duration.ofSeconds(sessionRenewThresholdSeconds);
     }
 
     public String getSessionStore() {

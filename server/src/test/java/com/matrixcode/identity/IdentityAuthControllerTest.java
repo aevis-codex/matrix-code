@@ -65,12 +65,14 @@ class IdentityAuthControllerTest {
         fixture.mockMvc.perform(post("/api/projects/demo/identity/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"username":"user-dev","password":"secret","ttlSeconds":300}
+                                {"username":"user-dev","password":"secret"}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.userId").value("user-dev"))
                 .andExpect(jsonPath("$.token").value("sa-token-user-dev"))
-                .andExpect(jsonPath("$.expiresAt").value("2026-06-27T05:05:00Z"));
+                .andExpect(jsonPath("$.expiresAt").value("2026-06-27T05:10:00Z"));
+
+        assertThat(fixture.tokenIssuer.lastTtl).isEqualTo(Duration.ofSeconds(600));
 
         assertThat(fixture.repository.auditRecords).extracting(UserAuditRecord::actionKey)
                 .containsExactly("IDENTITY_LOGIN");
@@ -85,7 +87,7 @@ class IdentityAuthControllerTest {
         fixture.mockMvc.perform(post("/api/projects/demo/identity/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"username":"user-dev","password":"bad-secret","ttlSeconds":300}
+                                {"username":"user-dev","password":"bad-secret"}
                                 """))
                 .andExpect(status().isUnauthorized());
 
@@ -101,12 +103,12 @@ class IdentityAuthControllerTest {
         fixture.mockMvc.perform(post("/api/projects/demo/identity/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"username":"user-dev","password":"secret","ttlSeconds":300}
+                                {"username":"user-dev","password":"secret"}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.userId").value("user-dev"))
                 .andExpect(jsonPath("$.token").value("sa-token-user-dev"))
-                .andExpect(jsonPath("$.expiresAt").value("2026-06-27T05:05:00Z"));
+                .andExpect(jsonPath("$.expiresAt").value("2026-06-27T05:10:00Z"));
     }
 
     @Test
@@ -117,7 +119,7 @@ class IdentityAuthControllerTest {
         fixture.mockMvc.perform(post("/api/projects/demo/identity/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"username":"admin","password":"secret","ttlSeconds":300}
+                                {"username":"admin","password":"secret"}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.userId").value("admin"))
@@ -156,16 +158,12 @@ class IdentityAuthControllerTest {
         fixture.repository.ensureMember(member("demo", "user-dev", "DEVELOPER"));
 
         fixture.mockMvc.perform(post("/api/projects/demo/identity/auth/session/renew")
-                        .header(RequestActorResolver.CURRENT_USER_HEADER, "user-dev")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"ttlSeconds":1200}
-                                """))
+                        .header(RequestActorResolver.CURRENT_USER_HEADER, "user-dev"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.tokenFingerprint").value("fp-user-dev"))
-                .andExpect(jsonPath("$.timeoutSeconds").value(1200));
+                .andExpect(jsonPath("$.timeoutSeconds").value(600));
 
-        assertThat(fixture.sessionTerminator.lastRenewTtl).isEqualTo(Duration.ofSeconds(1200));
+        assertThat(fixture.sessionTerminator.lastRenewTtl).isEqualTo(Duration.ofSeconds(600));
         assertThat(fixture.repository.auditRecords).extracting(UserAuditRecord::actionKey)
                 .containsExactly("IDENTITY_SESSION_RENEW");
     }

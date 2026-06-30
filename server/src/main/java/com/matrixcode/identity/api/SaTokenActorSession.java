@@ -1,5 +1,6 @@
 package com.matrixcode.identity.api;
 
+import java.time.Duration;
 import java.util.Optional;
 
 /**
@@ -29,6 +30,18 @@ public interface SaTokenActorSession {
      */
     default Optional<String> userIdForToken(String token) {
         return Optional.empty();
+    }
+
+    /**
+     * 当当前请求 token 剩余有效期低于阈值时自动续期。
+     *
+     * <p>作用域：强制 Sa-Token API 门禁；场景：用户保持活跃访问时采用滑动会话窗口，
+     * 避免登录页暴露固定缓存有效时间输入。</p>
+     *
+     * @param ttl 续期后的服务端统一会话窗口。
+     * @param threshold 触发续期的剩余有效期阈值。
+     */
+    default void renewIfNeeded(Duration ttl, Duration threshold) {
     }
 
     /**

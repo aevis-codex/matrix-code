@@ -93,7 +93,7 @@ public class IdentityAuthController {
         var user = identityService.authenticate(username, password)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "用户名或密码不正确"));
         permissionGuard.assertProjectMember(projectId, user.id());
-        var token = tokenIssuer.issue(user.id(), ttlOf(command.ttlSeconds()));
+        var token = tokenIssuer.issue(user.id(), authProperties.defaultTokenTtl());
         recordAudit(projectId, user.id(), "IDENTITY_LOGIN", user.id(), "用户密码登录");
         return new ActorTokenIssueResponse(token.userId(), token.token(), token.expiresAt().toString());
     }
@@ -129,12 +129,11 @@ public class IdentityAuthController {
     @PostMapping("/session/renew")
     public ActorSessionInfo renewSession(
             @PathVariable String projectId,
-            @RequestBody(required = false) ActorSessionRenewRequest command,
             HttpServletRequest request
     ) {
         var currentUserId = actorResolver.resolve(request);
         permissionGuard.assertProjectMember(projectId, currentUserId);
-        var session = sessionTerminator.renewCurrent(ttlOf(command == null ? null : command.ttlSeconds()));
+        var session = sessionTerminator.renewCurrent(authProperties.defaultTokenTtl());
         recordAudit(projectId, currentUserId, "IDENTITY_SESSION_RENEW", currentUserId, "续期当前登录会话");
         return session;
     }
@@ -260,13 +259,7 @@ public class IdentityAuthController {
     /**
      * 用户名密码登录请求体。
      */
-    public record ActorPasswordLoginRequest(String username, String password, Long ttlSeconds) {
-    }
-
-    /**
-     * 当前会话续期请求体。
-     */
-    public record ActorSessionRenewRequest(Long ttlSeconds) {
+    public record ActorPasswordLoginRequest(String username, String password) {
     }
 
     /**

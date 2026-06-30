@@ -858,7 +858,6 @@ function IdentityTokenPanel({ actorUserId, projectId, open, onActorSessionChange
   const [members, setMembers] = useState<ProjectMember[]>([]);
   const [username, setUsername] = useState(readStoredActorTokenStatus()?.userId ?? 'admin');
   const [selectedUserId, setSelectedUserId] = useState(readStoredActorTokenStatus()?.userId ?? '');
-  const [ttlSeconds, setTtlSeconds] = useState('86400');
   const [password, setPassword] = useState('');
   const [status, setStatus] = useState<ActorTokenStatus | null>(() => readStoredActorTokenStatus());
   const [sessions, setSessions] = useState<ActorSessionInfo[]>([]);
@@ -946,7 +945,6 @@ function IdentityTokenPanel({ actorUserId, projectId, open, onActorSessionChange
       const response = await loginActorSession(projectId, {
         username: username.trim(),
         password: password.trim(),
-        ttlSeconds: Number(ttlSeconds),
       });
       storeActorToken(response);
       onActorSessionChange(response.userId);
@@ -984,10 +982,10 @@ function IdentityTokenPanel({ actorUserId, projectId, open, onActorSessionChange
   }
 
   /**
-   * 续期当前登录会话并同步本地过期时间。
+   * 按服务端统一会话窗口续期当前登录会话。
    *
-   * 服务端返回剩余秒数后，前端只更新本地展示用 expiresAt 和会话列表；
-   * 真实会话有效期以 Sa-Token 服务端状态为准。
+   * 服务端返回剩余秒数后，前端只更新本地展示用估算时间和会话列表；
+   * 真实会话有效期以 Sa-Token 服务端状态为准，不允许用户在页面上自定义 TTL。
    */
   async function handleRenewSession() {
     if (busy || !status?.userId) {
@@ -996,7 +994,7 @@ function IdentityTokenPanel({ actorUserId, projectId, open, onActorSessionChange
     setBusy(true);
     setErrorMessage('');
     try {
-      const renewed = await renewActorSession(projectId, status.userId, Number(ttlSeconds));
+      const renewed = await renewActorSession(projectId, status.userId);
       const expiresAt = new Date(Date.now() + renewed.timeoutSeconds * 1000).toISOString();
       window.localStorage.setItem(actorTokenExpiresAtStorageKey, expiresAt);
       setStatus({ userId: status.userId, expiresAt });
@@ -1052,17 +1050,6 @@ function IdentityTokenPanel({ actorUserId, projectId, open, onActorSessionChange
           />
         </label>
         <label className="compact-field">
-          <span>有效期</span>
-          <input
-            aria-label="登录有效期"
-            min={60}
-            max={604800}
-            type="number"
-            value={ttlSeconds}
-            onChange={(event) => setTtlSeconds(event.target.value)}
-          />
-        </label>
-        <label className="compact-field">
           <span>密码</span>
           <input
             aria-label="登录密码"
@@ -1081,7 +1068,7 @@ function IdentityTokenPanel({ actorUserId, projectId, open, onActorSessionChange
       {loading ? <p className="empty-state">正在加载项目成员</p> : null}
       <div className="identity-token-status">
         <strong>当前登录态</strong>
-        <span>{status ? `${status.userId} · 有效至 ${status.expiresAt}` : '未登录'}</span>
+        <span>{status ? `${status.userId} · 动态续期 · 本地估算至 ${status.expiresAt}` : '未登录'}</span>
         <button className="secondary-button" disabled={busy || !status} onClick={() => void handleLogout()} type="button">
           退出登录
         </button>

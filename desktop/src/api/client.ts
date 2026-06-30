@@ -103,7 +103,6 @@ export type ActorTokenIssueInput = {
 export type ActorPasswordLoginInput = {
   username: string;
   password: string;
-  ttlSeconds: number;
 };
 export type ActorTokenIssueResponse = {
   userId: string;
@@ -1360,7 +1359,7 @@ export function loginActorSession(
 ): Promise<ActorTokenIssueResponse> {
   return requestJson<ActorTokenIssueResponse>(projectUrl(serverUrl, projectId, '/identity/auth/login'), {
     method: 'POST',
-    body: JSON.stringify({ username: input.username, password: input.password, ttlSeconds: input.ttlSeconds })
+    body: JSON.stringify({ username: input.username, password: input.password })
   });
 }
 
@@ -1402,12 +1401,10 @@ export function loadActorSession(
 export function renewActorSession(
   projectId: string,
   userId: string,
-  ttlSeconds: number,
   serverUrl = matrixCodeServerUrl()
 ): Promise<ActorSessionInfo> {
   return requestJson<ActorSessionInfo>(projectUrl(serverUrl, projectId, '/identity/auth/session/renew'), {
     method: 'POST',
-    body: JSON.stringify({ ttlSeconds }),
     headers: actorHeaders(userId)
   });
 }

@@ -4,6 +4,7 @@ import cn.dev33.satoken.exception.SaTokenException;
 import cn.dev33.satoken.stp.StpUtil;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.util.Optional;
 
 @Component
@@ -54,6 +55,31 @@ public class StpUtilSaTokenActorSession implements SaTokenActorSession {
             return Optional.of(normalizedLoginId.trim());
         } catch (SaTokenException | IllegalStateException exception) {
             return Optional.empty();
+        }
+    }
+
+    /**
+     * 在当前请求已携带有效 Sa-Token 时按滑动窗口自动续期。
+     *
+     * <p>只处理当前请求上下文中的 token；无登录态、永久 token 或读取失败时保持无副作用，
+     * 由显式续期接口和登录接口继续承担可观测审计。</p>
+     */
+    @Override
+    public void renewIfNeeded(Duration ttl, Duration threshold) {
+        try {
+            if (!StpUtil.isLogin()) {
+                return;
+            }
+            var remainingSeconds = StpUtil.getTokenTimeout();
+            if (remainingSeconds < 0) {
+                return;
+            }
+            var thresholdSeconds = Math.max(1, threshold == null ? 0 : threshold.toSeconds());
+            if (remainingSeconds <= thresholdSeconds) {
+                StpUtil.renewTimeout(Math.max(1, ttl == null ? 0 : ttl.toSeconds()));
+            }
+        } catch (SaTokenException | IllegalStateException exception) {
+            // 自动续期不能影响主请求鉴权结果。
         }
     }
 }

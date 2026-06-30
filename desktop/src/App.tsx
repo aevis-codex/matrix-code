@@ -24,6 +24,7 @@ import {
   prepareCodingAgentExecution,
   recordCodingAgentHandoff,
   recordDeploymentOperation,
+  renewActorSession,
   retryAgentRun,
   runDeploymentHealthCheck,
   startComposeEnvironment,
@@ -61,7 +62,7 @@ import {
   type DeveloperHandoffInput,
   type DeveloperPatchInput
 } from './components/DeveloperPanel';
-import { InspectorPanel, OperationsCenterDialog } from './components/InspectorPanel';
+import { OperationsCenterDialog, WorkbenchStatusBar } from './components/InspectorPanel';
 import { OpsPanel, type OpsDeploymentTargetInput } from './components/OpsPanel';
 import { ProductPanel, type ProductAcceptanceInput } from './components/ProductPanel';
 import { RoleAgentConfigDialog } from './components/RoleAgentConfigDialog';
@@ -93,6 +94,7 @@ type WorkbenchState =
   | { type: 'error'; message: string };
 
 type RuntimeNotificationFilter = 'all' | 'unread';
+type WorkspaceContextTab = 'overview' | 'files' | 'changes';
 
 type RuntimeDiagnosticsState =
   | { type: 'idle' }
@@ -115,6 +117,8 @@ const actorTokenUserIdStorageKey = 'matrixcode.actorTokenUserId';
 const actorTokenExpiresAtStorageKey = 'matrixcode.actorTokenExpiresAt';
 const localTaskRefreshIntervalMillis = 2000;
 const runtimeEventRefreshDelayMillis = 0;
+const sessionRenewCheckIntervalMillis = 60_000;
+const sessionRenewLeadMillis = 15 * 60_000;
 const rolePathByModelRole: Record<RoleAgentConfig['role'], string> = {
   PRODUCT: 'product',
   DEVELOPER: 'developer',
@@ -232,6 +236,28 @@ function storeActorToken(response: { userId: string; token: string; expiresAt: s
     window.localStorage.setItem(actorTokenStorageKey, response.token);
     window.localStorage.setItem(actorTokenUserIdStorageKey, response.userId);
     window.localStorage.setItem(actorTokenExpiresAtStorageKey, response.expiresAt);
+  } catch {
+    // localStorage may be unavailable in restricted browser contexts.
+  }
+}
+
+function readStoredActorTokenStatus(): { userId: string; expiresAt: string } | null {
+  try {
+    const userId = window.localStorage.getItem(actorTokenUserIdStorageKey);
+    const expiresAt = window.localStorage.getItem(actorTokenExpiresAtStorageKey);
+    const token = window.localStorage.getItem(actorTokenStorageKey);
+    if (!userId || !expiresAt || !token) {
+      return null;
+    }
+    return { userId, expiresAt };
+  } catch {
+    return null;
+  }
+}
+
+function updateStoredActorTokenExpiresAt(expiresAt: string) {
+  try {
+    window.localStorage.setItem(actorTokenExpiresAtStorageKey, expiresAt);
   } catch {
     // localStorage may be unavailable in restricted browser contexts.
   }
@@ -517,6 +543,217 @@ function EventList({ events }: { events: ProjectEvent[] }) {
   );
 }
 
+function formatTimelineTime(occurredAt: string) {
+  const date = new Date(occurredAt);
+  if (Number.isNaN(date.getTime())) {
+    return '时间待同步';
+  }
+
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hour = String(date.getHours()).padStart(2, '0');
+  const minute = String(date.getMinutes()).padStart(2, '0');
+  return `${month}月${day}日 ${hour}:${minute}`;
+}
+
+function AgentOutputConsole({
+  agentRunEvents,
+  agentRuns,
+  documents,
+  events,
+  selectedRole
+}: {
+  agentRunEvents: AgentRunEventRecord[];
+  agentRuns: AgentRunRecord[];
+  documents: DocumentSummary[];
+  events: ProjectEvent[];
+  selectedRole: string;
+}) {
+  const recentDocuments = documents.slice(0, 3);
+  const recentEvents = events.slice(0, 3);
+
+  return (
+    <section className="agent-output-console" aria-label="大模型输出台">
+      <header className="agent-console-header">
+        <div>
+          <p className="eyebrow">大模型输出台</p>
+          <h3>{selectedRole}智能体输出</h3>
+        </div>
+        <span>运行 {agentRuns.length.toLocaleString('zh-CN')} 次</span>
+      </header>
+      {agentRuns.length ? (
+        <ol className="agent-output-list">
+          {agentRuns.slice(0, 5).map((run) => {
+            const eventsForRun = agentRunEvents.filter((event) => event.runId === run.id).slice(0, 3);
+            return (
+              <li className="agent-output-item" key={run.id}>
+                <div>
+                  <strong>{run.goal}</strong>
+                  <span>
+                    {run.status} · {run.providerId}/{run.modelName} · {formatTimelineTime(run.updatedAt)}
+                  </span>
+                </div>
+                {run.summary ? <p>{run.summary}</p> : null}
+                {eventsForRun.length ? (
+                  <ul>
+                    {eventsForRun.map((event) => (
+                      <li key={event.id}>
+                        {formatTimelineTime(event.occurredAt)} · {event.eventTitle}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </li>
+            );
+          })}
+        </ol>
+      ) : (
+        <div className="agent-output-empty">
+          <strong>暂无 Agent 运行</strong>
+          <span>完成一次需求、开发、测试或部署动作后，这里会显示模型输出和关键事件。</span>
+        </div>
+      )}
+      <div className="agent-output-digest" aria-label="输出摘要">
+        <section>
+          <h4>最近文档</h4>
+          {recentDocuments.length ? (
+            recentDocuments.map((document) => (
+              <p key={document.id}>
+                {document.title} · {documentStateLabels[document.state]} · v{document.version}
+              </p>
+            ))
+          ) : (
+            <p>暂无文档输出</p>
+          )}
+        </section>
+        <section>
+          <h4>关键动态</h4>
+          {recentEvents.length ? (
+            recentEvents.map((event) => <p key={event.id}>{event.message}</p>)
+          ) : (
+            <p>暂无关键动态</p>
+          )}
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function WorkspaceContextPanel({
+  onTabChange,
+  tab,
+  workbench
+}: {
+  onTabChange: (tab: WorkspaceContextTab) => void;
+  tab: WorkspaceContextTab;
+  workbench: ProjectWorkbench;
+}) {
+  const currentBinding = workbench.modelGateway.bindings[0];
+  const metrics = workbench.metrics;
+  const gatewayMetrics = workbench.modelGateway.metrics;
+  const recentDiff = workbench.localExecution.recentGitDiff;
+  const changedFiles = recentDiff?.changedFiles ?? [];
+
+  return (
+    <aside className="workspace-context" aria-label="输出与预览">
+      <div className="workspace-context__tabs" aria-label="上下文面板" role="tablist">
+        {[
+          ['overview', '概览'],
+          ['files', '文件'],
+          ['changes', '改动']
+        ].map(([value, label]) => (
+          <button
+            aria-selected={tab === value}
+            className={`workspace-context__tab ${tab === value ? 'workspace-context__tab--active' : ''}`}
+            key={value}
+            onClick={() => onTabChange(value as WorkspaceContextTab)}
+            role="tab"
+            type="button"
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'overview' ? (
+        <div className="workspace-context__body">
+          <section className="context-card" aria-label="上下文窗口">
+            <header>
+              <strong>上下文窗口</strong>
+              <span>当前模型上下文占用</span>
+            </header>
+            <div className="context-ring">
+              <strong>{Math.round(metrics.cacheHitRate * 100)}%</strong>
+              <span>缓存命中</span>
+            </div>
+            <ul className="context-list">
+              <li>
+                <span>当前模型</span>
+                <strong>{currentBinding ? `${currentBinding.providerId}/${currentBinding.model}` : '未绑定'}</strong>
+              </li>
+              <li>
+                <span>请求数</span>
+                <strong>{gatewayMetrics.requestCount.toLocaleString('zh-CN')}</strong>
+              </li>
+              <li>
+                <span>会话 tokens</span>
+                <strong>{metrics.sessionTokens.toLocaleString('zh-CN')}</strong>
+              </li>
+            </ul>
+          </section>
+          <section className="context-card" aria-label="成本">
+            <header>
+              <strong>成本</strong>
+              <span>模型调用成本</span>
+            </header>
+            <div className="context-metric-grid">
+              <span>
+                <small>会话费用</small>
+                <strong>{gatewayMetrics.estimatedCost.toLocaleString('zh-CN')} {gatewayMetrics.currency}</strong>
+              </span>
+              <span>
+                <small>文档</small>
+                <strong>{metrics.documentCount.toLocaleString('zh-CN')}</strong>
+              </span>
+              <span>
+                <small>未关 Bug</small>
+                <strong>{metrics.openBugCount.toLocaleString('zh-CN')}</strong>
+              </span>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {tab === 'files' ? (
+        <div className="workspace-context__body">
+          <DocumentHandoffList documents={workbench.documents} />
+        </div>
+      ) : null}
+
+      {tab === 'changes' ? (
+        <div className="workspace-context__body">
+          <section className="context-card" aria-label="Git 改动">
+            <header>
+              <strong>Git 改动</strong>
+              <span>{recentDiff?.stat || '暂无改动摘要'}</span>
+            </header>
+            {changedFiles.length ? (
+              <ul className="context-file-list">
+                {changedFiles.map((file) => (
+                  <li key={file}>{file}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="empty-state">暂无文件改动</p>
+            )}
+          </section>
+          <EventList events={workbench.events} />
+        </div>
+      ) : null}
+    </aside>
+  );
+}
+
 async function loadAgentRuntimeSnapshot(projectId: string, actorUserId: string): Promise<{
   agentRuns: AgentRunRecord[];
   agentRunEvents: AgentRunEventRecord[];
@@ -548,9 +785,9 @@ function App() {
   const [documentCenterOpen, setDocumentCenterOpen] = useState(false);
   const [runtimeDiagnosticsOpen, setRuntimeDiagnosticsOpen] = useState(false);
   const [operationsCenterOpen, setOperationsCenterOpen] = useState(false);
+  const [contextPanelTab, setContextPanelTab] = useState<WorkspaceContextTab>('overview');
   const [selectedActorUserId, setSelectedActorUserId] = useState<string | null>(() => readStoredActorUserId());
   const [loginUsername, setLoginUsername] = useState(() => readStoredActorUserId() ?? 'admin');
-  const [loginTtlSeconds, setLoginTtlSeconds] = useState('86400');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginErrorMessage, setLoginErrorMessage] = useState('');
@@ -634,7 +871,6 @@ function App() {
       const response = await loginActorSession('demo', {
         username,
         password,
-        ttlSeconds: Number(loginTtlSeconds),
       });
       storeActorToken(response);
       storeCurrentActorUserId(response.userId);
@@ -668,6 +904,37 @@ function App() {
   useEffect(() => {
     void refreshWorkbench();
   }, []);
+
+  useEffect(() => {
+    if (workbenchState.type !== 'ready') {
+      return undefined;
+    }
+    let renewing = false;
+    const projectId = workbenchState.workbench.projectId;
+    const maybeRenewSession = () => {
+      const storedStatus = readStoredActorTokenStatus();
+      if (!storedStatus || renewing) {
+        return;
+      }
+      const expiresAt = Date.parse(storedStatus.expiresAt);
+      if (!Number.isFinite(expiresAt) || expiresAt - Date.now() > sessionRenewLeadMillis) {
+        return;
+      }
+      renewing = true;
+      void renewActorSession(projectId, storedStatus.userId)
+        .then((session) => {
+          updateStoredActorTokenExpiresAt(new Date(Date.now() + session.timeoutSeconds * 1000).toISOString());
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          renewing = false;
+        });
+    };
+
+    maybeRenewSession();
+    const intervalId = window.setInterval(maybeRenewSession, sessionRenewCheckIntervalMillis);
+    return () => window.clearInterval(intervalId);
+  }, [workbenchState.type === 'ready' ? workbenchState.workbench.projectId : null, workbenchState.type]);
 
   const readyProjectId = workbenchState.type === 'ready' ? workbenchState.workbench.projectId : null;
   const readySelectedRole =
@@ -1130,16 +1397,6 @@ function App() {
                   />
                 </label>
                 <label className="auth-login-form__field">
-                  <span>登录有效期</span>
-                  <input
-                    aria-label="登录有效期"
-                    min="300"
-                    onChange={(event) => setLoginTtlSeconds(event.target.value)}
-                    type="number"
-                    value={loginTtlSeconds}
-                  />
-                </label>
-                <label className="auth-login-form__field">
                   <span>密码</span>
                   <input
                     aria-label="密码"
@@ -1264,46 +1521,63 @@ function App() {
             </span>
           </div>
         </header>
-        {syncError ? (
-          <p className="sync-alert" role="status">
-            {syncError}
-          </p>
-        ) : null}
-        {topNotification ? (
-          <section
-            className={`runtime-alert runtime-alert--${topNotification.level.toLowerCase()}`}
-            role="status"
-            aria-label="运行态提醒"
-          >
-            <div className="runtime-alert__body">
-              <strong>{topNotification.title}</strong>
-              <span>{topNotification.message}</span>
-            </div>
-            <button
-              aria-label="关闭提醒"
-              className="runtime-alert__close"
-              onClick={() => void handleDismissTopNotification(topNotification.id)}
-              type="button"
+
+        <div className="stage-rail">
+          {syncError ? (
+            <p className="sync-alert" role="status">
+              {syncError}
+            </p>
+          ) : null}
+          {topNotification ? (
+            <section
+              className={`runtime-alert runtime-alert--${topNotification.level.toLowerCase()}`}
+              role="status"
+              aria-label="运行态提醒"
             >
-              ×
-            </button>
+              <div className="runtime-alert__body">
+                <strong>{topNotification.title}</strong>
+                <span>{topNotification.message}</span>
+              </div>
+              <button
+                aria-label="关闭提醒"
+                className="runtime-alert__close"
+                onClick={() => void handleDismissTopNotification(topNotification.id)}
+                type="button"
+              >
+                ×
+              </button>
+            </section>
+          ) : null}
+          <section className="stage-track" aria-label="文档流转阶段">
+            {stageViews.map((stage) => (
+              <article
+                aria-label={`${stage.name}，${stage.statusLabel}`}
+                className={`stage-step stage-step--${stage.status}`}
+                key={stage.name}
+              >
+                <span className="stage-step__number">{stage.number}</span>
+                <strong className="stage-step__label">{stage.name}</strong>
+              </article>
+            ))}
           </section>
-        ) : null}
+        </div>
 
-        <section className="stage-track" aria-label="文档流转阶段">
-          {stageViews.map((stage) => (
-            <article
-              aria-label={`${stage.name}，${stage.statusLabel}`}
-              className={`stage-step stage-step--${stage.status}`}
-              key={stage.name}
-            >
-              <span className="stage-step__number">{stage.number}</span>
-              <strong className="stage-step__label">{stage.name}</strong>
-            </article>
-          ))}
-        </section>
+        <AgentOutputConsole
+          agentRunEvents={workbenchState.agentRunEvents}
+          agentRuns={workbenchState.agentRuns}
+          documents={workbench.documents}
+          events={workbench.events}
+          selectedRole={selectedRole}
+        />
 
-        <section className="work-panels">
+        <section className="agent-dialog-console" aria-label="大模型对话台">
+          <div className="agent-dialog-console__header">
+            <div>
+              <p className="eyebrow">大模型对话台</p>
+              <h3>{selectedRole}工作台</h3>
+            </div>
+            <span>输入、执行和交接</span>
+          </div>
           <div className="active-panel-slot">
             {selectedRole === '产品' ? (
               <ProductPanel
@@ -1348,50 +1622,18 @@ function App() {
               />
             ) : null}
           </div>
-
-          <div className="workspace-extras">
-            <DocumentHandoffList documents={workbench.documents} />
-            <EventList events={workbench.events} />
-          </div>
         </section>
       </section>
 
-      <aside className="inspector" aria-label="运行指标">
-        <InspectorPanel
-          projectId={workbench.projectId}
-          actorUserId={currentActorId}
-          projectMembers={workbenchState.projectMembers}
-          agentRunUserAudit={workbenchState.agentRunUserAudit}
-          agentRunEvents={workbenchState.agentRunEvents}
-          agentRuns={workbenchState.agentRuns}
-          bugs={workbench.bugs}
-          deploymentTargets={workbench.deploymentTargets}
-          deploymentRuntimeSummaries={workbench.deploymentRuntimeSummaries}
-          composeEnvironments={workbench.composeEnvironments}
-          composeRuntimeViews={workbench.composeRuntimeViews}
-          events={workbench.events}
-          metrics={workbench.metrics}
-          modelGateway={workbench.modelGateway}
-          localExecution={workbench.localExecution}
-          runtimeNotifications={visibleRuntimeNotifications}
-          runtimeNotificationFilter={runtimeNotificationFilter}
-          runtimeNotificationUnreadCount={unreadRuntimeNotificationCount}
-          runtimeNotificationActionBusy={runtimeNotificationActionBusy}
-          runtimeNotificationActionsEnabled={hasServerRuntimeNotifications}
-          approvalBusyTaskId={approvalBusyTaskId}
-          cancelBusyTaskId={cancelBusyTaskId}
-          retryBusyRunId={retryBusyRunId}
-          claimBusyRunId={claimBusyRunId}
-          claimNextBusy={claimNextBusy}
-          onRuntimeNotificationFilterChange={setRuntimeNotificationFilter}
-          onMarkAllRuntimeNotificationsRead={handleMarkAllRuntimeNotificationsRead}
-          onDecideLocalCommandApproval={handleDecideLocalCommandApproval}
-          onCancelLocalExecutionTask={handleCancelLocalExecutionTask}
-          onRetryAgentRun={handleRetryAgentRun}
-          onClaimAgentRun={handleClaimAgentRun}
-          onClaimNextAgentRun={handleClaimNextAgentRun}
-        />
-      </aside>
+      <WorkspaceContextPanel tab={contextPanelTab} onTabChange={setContextPanelTab} workbench={workbench} />
+
+      <WorkbenchStatusBar
+        agentRunEvents={workbenchState.agentRunEvents}
+        agentRuns={workbenchState.agentRuns}
+        metrics={workbench.metrics}
+        modelGateway={workbench.modelGateway}
+        runtimeNotificationUnreadCount={unreadRuntimeNotificationCount}
+      />
       <RoleAgentConfigDialog
         actorUserId={currentActorId}
         configs={roleAgentConfigs}

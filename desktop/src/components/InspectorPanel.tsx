@@ -432,6 +432,106 @@ function formatCost(value: number) {
   return value.toFixed(3);
 }
 
+type WorkbenchStatusBarProps = Pick<
+  InspectorPanelProps,
+  'agentRunEvents' | 'agentRuns' | 'metrics' | 'modelGateway' | 'runtimeNotificationUnreadCount'
+>;
+
+/**
+ * 在主工作台底部展示一行动态运行状态。
+ *
+ * <p>作用域：主工作台首屏；场景：用户需要持续看到当前模型、运行指标和工作摘要，
+ * 但不需要打开完整运行中心或占用右侧整列空间。</p>
+ */
+export function WorkbenchStatusBar({
+  agentRunEvents = [],
+  agentRuns = [],
+  metrics,
+  modelGateway,
+  runtimeNotificationUnreadCount = 0
+}: WorkbenchStatusBarProps) {
+  const cachePercent = Math.round(metrics.cacheHitRate * 100);
+  const currentBinding = modelGateway.bindings[0];
+  const gatewayMetrics = modelGateway.metrics;
+  const recentRequest = modelGateway.recentRequests[modelGateway.recentRequests.length - 1];
+  const latestAgentRun = agentRuns[0];
+  const latestAgentRunEvents = latestAgentRun
+    ? agentRunEvents
+        .filter((event) => event.runId === latestAgentRun.id)
+        .sort((left, right) => Date.parse(right.occurredAt) - Date.parse(left.occurredAt))
+        .slice(0, 2)
+    : [];
+  const modelSummary = currentBinding ? `${currentBinding.providerId} / ${currentBinding.model}` : '暂无模型绑定';
+  const agentSummary = latestAgentRun ? `${agentRunStatusLabels[latestAgentRun.status]} · ${latestAgentRun.goal}` : '暂无 Agent 运行';
+  const recentCacheHitPercent = recentRequest ? Math.round(recentRequest.usage.cacheHitRate * 100) : null;
+  const prefixSummary = recentRequest?.usage.stablePrefixHash ? `prefix ${recentRequest.usage.stablePrefixHash}` : 'prefix 无';
+  const fullSummary = [
+    agentSummary,
+    latestAgentRun?.failureSummary ? `失败摘要 ${latestAgentRun.failureSummary}` : '',
+    latestAgentRun?.retryable ? '恢复策略 可重试' : '',
+    modelSummary,
+    `请求 ${formatNumber(gatewayMetrics.requestCount)}`,
+    `费用 ${formatNumber(gatewayMetrics.estimatedCost)} ${gatewayMetrics.currency}`,
+    `缓存 ${cachePercent}%`,
+    recentCacheHitPercent === null ? '' : `最近命中 ${recentCacheHitPercent}%`,
+    prefixSummary,
+    `会话 tokens ${formatNumber(metrics.sessionTokens)}`,
+    `文档 ${formatNumber(metrics.documentCount)}`,
+    `未关 Bug ${formatNumber(metrics.openBugCount)}`,
+    `未读提醒 ${formatNumber(runtimeNotificationUnreadCount)}`
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  return (
+    <section aria-label="工作台底部状态" className="workbench-statusbar" title={fullSummary}>
+      <div aria-label="当前模型" className="workbench-statusbar__group workbench-statusbar__group--model">
+        <span className="workbench-statusbar__dot" aria-hidden="true" />
+        <span className="workbench-statusbar__label">当前模型</span>
+        <strong className="workbench-statusbar__value workbench-statusbar__value--accent">{modelSummary}</strong>
+      </div>
+      <span className="workbench-statusbar__divider" aria-hidden="true" />
+      <div aria-label="Agent 运行" className="workbench-statusbar__group workbench-statusbar__group--agent">
+        <span className="workbench-statusbar__label">Agent</span>
+        <strong className="workbench-statusbar__value">{agentSummary}</strong>
+        {latestAgentRun?.failureSummary ? (
+          <span className="workbench-statusbar__item">失败摘要 {latestAgentRun.failureSummary}</span>
+        ) : null}
+        {latestAgentRun?.retryable ? <span className="workbench-statusbar__item">恢复策略 可重试</span> : null}
+        {latestAgentRun?.retryOfRunId ? (
+          <span className="workbench-statusbar__item">重试来源 {latestAgentRun.retryOfRunId}</span>
+        ) : null}
+        {latestAgentRunEvents.map((event) => (
+          <span className="workbench-statusbar__item" key={event.id}>
+            {formatEventTime(event)} · {event.eventTitle}
+          </span>
+        ))}
+      </div>
+      <span className="workbench-statusbar__divider" aria-hidden="true" />
+      <div aria-label="运行指标" className="workbench-statusbar__group">
+        <span className="workbench-statusbar__label">运行指标</span>
+        <span className="workbench-statusbar__item">请求 {formatNumber(gatewayMetrics.requestCount)}</span>
+        <span className="workbench-statusbar__item">
+          费用 {formatNumber(gatewayMetrics.estimatedCost)} {gatewayMetrics.currency}
+        </span>
+        <span className="workbench-statusbar__item">缓存 {cachePercent}%</span>
+        {recentCacheHitPercent === null ? null : (
+          <span className="workbench-statusbar__item">最近命中 {recentCacheHitPercent}%</span>
+        )}
+        <span className="workbench-statusbar__item">{prefixSummary}</span>
+      </div>
+      <span className="workbench-statusbar__divider" aria-hidden="true" />
+      <div aria-label="工作摘要" className="workbench-statusbar__group">
+        <span className="workbench-statusbar__label">工作摘要</span>
+        <span className="workbench-statusbar__item">会话 tokens {formatNumber(metrics.sessionTokens)}</span>
+        <span className="workbench-statusbar__item">文档 {formatNumber(metrics.documentCount)}</span>
+        <span className="workbench-statusbar__item">未关 Bug {formatNumber(metrics.openBugCount)}</span>
+        <span className="workbench-statusbar__item">未读提醒 {formatNumber(runtimeNotificationUnreadCount)}</span>
+      </div>
+    </section>
+  );
+}
+
 type ToolTracePayload = {
   toolName?: string;
   action?: string;
