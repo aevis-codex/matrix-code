@@ -1,0 +1,11 @@
+[Unit]
+Description=Run MatrixCode production health probe periodically
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+AccuracySec=10s
+Unit=matrixcode-health-probe.service
+
+[Install]
+WantedBy=timers.target

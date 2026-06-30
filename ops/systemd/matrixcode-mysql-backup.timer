@@ -1,0 +1,11 @@
+[Unit]
+Description=Run MatrixCode MySQL production backup daily
+
+[Timer]
+OnCalendar=*-*-* 03:20:00
+Persistent=true
+RandomizedDelaySec=10min
+Unit=matrixcode-mysql-backup.service
+
+[Install]
+WantedBy=timers.target

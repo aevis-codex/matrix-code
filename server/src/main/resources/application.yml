@@ -1,0 +1,141 @@
+spring:
+  application:
+    name: matrixcode-server
+  data:
+    redis:
+      host: ${MATRIXCODE_REDIS_HOST:127.0.0.1}
+      port: ${MATRIXCODE_REDIS_PORT:6379}
+      password: ${MATRIXCODE_REDIS_PASSWORD:}
+      timeout: ${MATRIXCODE_REDIS_TIMEOUT:5s}
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+
+sa-token:
+  token-name: ${SA_TOKEN_TOKEN_NAME:Authorization}
+  token-prefix: ${SA_TOKEN_TOKEN_PREFIX:Bearer}
+  timeout: ${SA_TOKEN_TIMEOUT:86400}
+  active-timeout: ${SA_TOKEN_ACTIVE_TIMEOUT:-1}
+  is-read-header: ${SA_TOKEN_IS_READ_HEADER:true}
+  is-read-body: ${SA_TOKEN_IS_READ_BODY:false}
+  is-read-cookie: ${SA_TOKEN_IS_READ_COOKIE:false}
+
+matrixcode:
+  auth:
+    require-sa-token: ${MATRIXCODE_AUTH_REQUIRE_SA_TOKEN:false}
+    require-signed-actor-token: ${MATRIXCODE_AUTH_REQUIRE_SIGNED_ACTOR_TOKEN:false}
+    actor-token-secret: ${MATRIXCODE_AUTH_ACTOR_TOKEN_SECRET:}
+    bootstrap-token: ${MATRIXCODE_AUTH_BOOTSTRAP_TOKEN:}
+    default-token-ttl-seconds: ${MATRIXCODE_AUTH_DEFAULT_TOKEN_TTL_SECONDS:86400}
+    session-store: ${MATRIXCODE_AUTH_SESSION_STORE:memory}
+    session-redis-key-prefix: ${MATRIXCODE_AUTH_SESSION_REDIS_KEY_PREFIX:matrixcode:sa-token:}
+    admin-initial-password: ${MATRIXCODE_AUTH_ADMIN_INITIAL_PASSWORD:}
+  execution-agents:
+    shared-secret: ${MATRIXCODE_EXECUTION_AGENTS_SHARED_SECRET:}
+    previous-shared-secrets: ${MATRIXCODE_EXECUTION_AGENTS_PREVIOUS_SHARED_SECRETS:}
+    heartbeat-ttl-seconds: ${MATRIXCODE_EXECUTION_AGENTS_HEARTBEAT_TTL_SECONDS:120}
+  agent-runtime:
+    worker-scheduler:
+      enabled: ${MATRIXCODE_AGENT_WORKER_SCHEDULER_ENABLED:false}
+      project-id: ${MATRIXCODE_AGENT_WORKER_SCHEDULER_PROJECT_ID:demo}
+      worker-id: ${MATRIXCODE_AGENT_WORKER_SCHEDULER_WORKER_ID:matrixcode-worker}
+      execute-model-request: ${MATRIXCODE_AGENT_WORKER_SCHEDULER_EXECUTE_MODEL_REQUEST:false}
+      fixed-delay-ms: ${MATRIXCODE_AGENT_WORKER_SCHEDULER_FIXED_DELAY_MS:10000}
+  bootstrap:
+    initial-project:
+      enabled: ${MATRIXCODE_BOOTSTRAP_INITIAL_PROJECT_ENABLED:false}
+      project-id: ${MATRIXCODE_BOOTSTRAP_INITIAL_PROJECT_ID:}
+      project-name: ${MATRIXCODE_BOOTSTRAP_INITIAL_PROJECT_NAME:}
+      owner-user-id: ${MATRIXCODE_BOOTSTRAP_INITIAL_PROJECT_OWNER_USER_ID:}
+      owner-display-name: ${MATRIXCODE_BOOTSTRAP_INITIAL_PROJECT_OWNER_DISPLAY_NAME:}
+      current-stage: ${MATRIXCODE_BOOTSTRAP_INITIAL_PROJECT_CURRENT_STAGE:真实库初始化}
+  persistence:
+    mode: ${MATRIXCODE_PERSISTENCE_MODE:file}
+    jdbc:
+      url: ${MATRIXCODE_PERSISTENCE_JDBC_URL:}
+      username: ${MATRIXCODE_PERSISTENCE_JDBC_USERNAME:}
+      password: ${MATRIXCODE_PERSISTENCE_JDBC_PASSWORD:}
+      table-name: ${MATRIXCODE_PERSISTENCE_JDBC_TABLE_NAME:matrixcode_state_snapshots}
+      migrate-on-startup: ${MATRIXCODE_PERSISTENCE_JDBC_MIGRATE_ON_STARTUP:false}
+      create-database-if-missing: ${MATRIXCODE_PERSISTENCE_JDBC_CREATE_DATABASE_IF_MISSING:false}
+      legacy-snapshot-writes-enabled: ${MATRIXCODE_PERSISTENCE_JDBC_LEGACY_SNAPSHOT_WRITES_ENABLED:false}
+  model-gateway:
+    providers:
+      qwen:
+        name: 千问
+        base-url: ${MATRIXCODE_QWEN_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
+        api-key-source: MATRIXCODE_QWEN_API_KEY
+        enabled: ${MATRIXCODE_QWEN_ENABLED:false}
+      deepseek:
+        name: DeepSeek
+        base-url: ${MATRIXCODE_DEEPSEEK_BASE_URL:https://api.deepseek.com}
+        api-key-source: MATRIXCODE_DEEPSEEK_API_KEY
+        enabled: ${MATRIXCODE_DEEPSEEK_ENABLED:false}
+      kimi:
+        name: Kimi
+        base-url: ${MATRIXCODE_KIMI_BASE_URL:https://api.moonshot.cn/v1}
+        api-key-source: MATRIXCODE_KIMI_API_KEY
+        enabled: ${MATRIXCODE_KIMI_ENABLED:false}
+      doubao:
+        name: 豆包
+        base-url: ${MATRIXCODE_DOUBAO_BASE_URL:https://ark.cn-beijing.volces.com/api/v3}
+        api-key-source: MATRIXCODE_DOUBAO_API_KEY
+        enabled: ${MATRIXCODE_DOUBAO_ENABLED:false}
+    role-defaults:
+      PRODUCT:
+        provider-id: ${MATRIXCODE_PRODUCT_PROVIDER_ID:local-deterministic}
+        model: ${MATRIXCODE_PRODUCT_MODEL:matrixcode-local-product}
+        context-budget-tokens: ${MATRIXCODE_PRODUCT_CONTEXT_BUDGET:32000}
+      DEVELOPER:
+        provider-id: ${MATRIXCODE_DEVELOPER_PROVIDER_ID:local-deterministic}
+        model: ${MATRIXCODE_DEVELOPER_MODEL:matrixcode-local-developer}
+        context-budget-tokens: ${MATRIXCODE_DEVELOPER_CONTEXT_BUDGET:32000}
+      TESTER:
+        provider-id: ${MATRIXCODE_TESTER_PROVIDER_ID:local-deterministic}
+        model: ${MATRIXCODE_TESTER_MODEL:matrixcode-local-tester}
+        context-budget-tokens: ${MATRIXCODE_TESTER_CONTEXT_BUDGET:32000}
+      OPERATIONS:
+        provider-id: ${MATRIXCODE_OPERATIONS_PROVIDER_ID:local-deterministic}
+        model: ${MATRIXCODE_OPERATIONS_MODEL:matrixcode-local-operations}
+        context-budget-tokens: ${MATRIXCODE_OPERATIONS_CONTEXT_BUDGET:32000}
+    milvus:
+      host: ${MATRIXCODE_MILVUS_HOST:127.0.0.1}
+      port: ${MATRIXCODE_MILVUS_PORT:19530}
+      database: ${MATRIXCODE_MILVUS_DATABASE:matrix_code}
+      collection: ${MATRIXCODE_MILVUS_COLLECTION:matrixcode_context_chunks_v2}
+      secure: ${MATRIXCODE_MILVUS_SECURE:false}
+      username: ${MATRIXCODE_MILVUS_USERNAME:}
+      password: ${MATRIXCODE_MILVUS_PASSWORD:}
+      token: ${MATRIXCODE_MILVUS_TOKEN:}
+      load-timeout-ms: ${MATRIXCODE_MILVUS_LOAD_TIMEOUT_MS:120000}
+    embedding:
+      provider-id: ${MATRIXCODE_EMBEDDING_PROVIDER_ID:qwen}
+      model: ${MATRIXCODE_EMBEDDING_MODEL:text-embedding-v4}
+    vector-context:
+      enabled: ${MATRIXCODE_VECTOR_CONTEXT_ENABLED:false}
+      store: ${MATRIXCODE_VECTOR_CONTEXT_STORE:memory}
+      top-k: ${MATRIXCODE_VECTOR_CONTEXT_TOP_K:3}
+      dimension: ${MATRIXCODE_VECTOR_CONTEXT_DIMENSION:1024}
+  redis:
+    host: ${MATRIXCODE_REDIS_HOST:127.0.0.1}
+    port: ${MATRIXCODE_REDIS_PORT:6379}
+    password: ${MATRIXCODE_REDIS_PASSWORD:}
+  rocketmq:
+    name-server: ${MATRIXCODE_ROCKETMQ_NAME_SERVER:127.0.0.1:9876}
+    topic-prefix: ${MATRIXCODE_ROCKETMQ_TOPIC_PREFIX:matrixcode}
+    event-relay:
+      enabled: ${MATRIXCODE_ROCKETMQ_EVENT_RELAY_ENABLED:false}
+      topic-suffix: ${MATRIXCODE_ROCKETMQ_EVENT_RELAY_TOPIC_SUFFIX:project-events}
+      tag: ${MATRIXCODE_ROCKETMQ_EVENT_RELAY_TAG:project-event}
+      producer-group-suffix: ${MATRIXCODE_ROCKETMQ_EVENT_RELAY_PRODUCER_GROUP_SUFFIX:project-event-producer}
+      consumer-group-suffix: ${MATRIXCODE_ROCKETMQ_EVENT_RELAY_CONSUMER_GROUP_SUFFIX:project-event-consumer}
+      send-timeout-ms: ${MATRIXCODE_ROCKETMQ_EVENT_RELAY_SEND_TIMEOUT_MS:3000}
+      consume-thread-min: ${MATRIXCODE_ROCKETMQ_EVENT_RELAY_CONSUME_THREAD_MIN:2}
+      consume-thread-max: ${MATRIXCODE_ROCKETMQ_EVENT_RELAY_CONSUME_THREAD_MAX:4}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

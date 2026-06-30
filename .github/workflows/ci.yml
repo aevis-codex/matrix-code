@@ -1,0 +1,83 @@
+name: MatrixCode CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  server:
+    name: Server tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Run server tests
+        run: mvn -B -pl server test
+
+  desktop:
+    name: Desktop tests and build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Run desktop tests
+        working-directory: desktop
+        run: npm test
+
+      - name: Build desktop web assets
+        working-directory: desktop
+        run: npm run build
+
+  scripts:
+    name: Script gates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check shell syntax
+        run: |
+          bash -n scripts/*.sh
+          bash -n ops/bin/run-matrixcode-server.sh
+
+      - name: Run script tests
+        run: |
+          bash scripts/check-real-runtime-production-test.sh
+          bash scripts/run-production-local-test.sh
+          bash scripts/verify-production-deployment-assets.sh
+          bash scripts/backup-production-mysql-test.sh
+          bash scripts/prune-production-mysql-backups-test.sh
+          bash scripts/run-production-mysql-backup-test.sh
+          bash scripts/probe-production-health-test.sh
+          bash scripts/package-production-release-test.sh
+          bash scripts/install-production-release-test.sh
+          bash scripts/verify-tls-assets.sh
+          bash scripts/verify-production-readiness.sh
+          bash scripts/verify-ci-assets.sh
