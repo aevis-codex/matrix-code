@@ -256,6 +256,18 @@ export type ModelResponse = {
   promptContract: PromptContract;
   createdAt: string;
 };
+export type RoleModelRequestInput = {
+  actorUserId?: string;
+  instruction: string;
+  contextBlocks: ContextBlock[];
+  providerId?: string;
+  model?: string;
+  approvalMode?: string;
+  reasoningEffort?: string;
+  planMode?: boolean;
+  goalMode?: boolean;
+  tokenEconomy?: boolean;
+};
 export type ModelGatewaySummary = {
   bindings: RoleModelBinding[];
   metrics: ModelGatewayMetrics;
@@ -862,6 +874,62 @@ async function requestOptionalJson<T>(url: string, init: RequestInit = {}): Prom
   }
 
   return (await response.json()) as T;
+}
+
+type ServerSentEvent = {
+  event: string;
+  data: string;
+};
+
+/**
+ * 从当前缓冲区切出一个完整 SSE 事件。
+ * 作用域：模型流式 API 客户端；场景：兼容 LF 和 CRLF 分隔，避免网络分片导致事件被截断解析。
+ */
+function nextServerSentEvent(buffer: string): { rawEvent: string; rest: string } | null {
+  const lfIndex = buffer.indexOf('\n\n');
+  const crlfIndex = buffer.indexOf('\r\n\r\n');
+  if (lfIndex === -1 && crlfIndex === -1) {
+    return null;
+  }
+  if (crlfIndex !== -1 && (lfIndex === -1 || crlfIndex < lfIndex)) {
+    return {
+      rawEvent: buffer.slice(0, crlfIndex),
+      rest: buffer.slice(crlfIndex + 4)
+    };
+  }
+  return {
+    rawEvent: buffer.slice(0, lfIndex),
+    rest: buffer.slice(lfIndex + 2)
+  };
+}
+
+/**
+ * 解析单个 SSE 事件的事件名和 data 字段。
+ * 作用域：模型流式 API 客户端；场景：把服务端 `event:delta` / `event:completed` 转成前端可分发结构。
+ */
+function parseServerSentEvent(rawEvent: string): ServerSentEvent {
+  let event = 'message';
+  const dataLines: string[] = [];
+  rawEvent.split(/\r?\n/).forEach((line) => {
+    if (line.startsWith('event:')) {
+      event = line.slice('event:'.length).trim();
+    } else if (line.startsWith('data:')) {
+      dataLines.push(line.slice('data:'.length).trimStart());
+    }
+  });
+  return { event, data: dataLines.join('\n') };
+}
+
+/**
+ * 将 SSE data 解析为指定 JSON 载荷。
+ * 作用域：模型流式 API 客户端；场景：统一处理 delta、completed 和 error 事件的 JSON 反序列化错误。
+ */
+function parseModelStreamPayload<T>(event: ServerSentEvent): T {
+  try {
+    return JSON.parse(event.data) as T;
+  } catch {
+    throw new Error('模型流式响应格式不正确');
+  }
 }
 
 function projectUrl(serverUrl: string, projectId: string, path: string): string {
@@ -1659,18 +1727,7 @@ export function bindRoleModel(
 export function createRoleModelRequest(
   projectId: string,
   role: string,
-  input: {
-    actorUserId?: string;
-    instruction: string;
-    contextBlocks: ContextBlock[];
-    providerId?: string;
-    model?: string;
-    approvalMode?: string;
-    reasoningEffort?: string;
-    planMode?: boolean;
-    goalMode?: boolean;
-    tokenEconomy?: boolean;
-  },
+  input: RoleModelRequestInput,
   actorUserIdOrServerUrl = input.actorUserId ?? matrixCodeServerUrl(),
   serverUrl?: string
 ): Promise<ModelResponse> {
@@ -1680,6 +1737,89 @@ export function createRoleModelRequest(
     headers: request.headers,
     body: JSON.stringify(input)
   });
+}
+
+/**
+ * 以指定角色发起流式模型请求。
+ * 作用域：项目成员；场景：Agent Composer 需要把大模型 delta 实时追加到输出台，同时在完成事件中拿到完整 usage。
+ */
+export async function createRoleModelRequestStream(
+  projectId: string,
+  role: string,
+  input: RoleModelRequestInput,
+  onDelta: (delta: string) => void,
+  actorUserIdOrServerUrl = input.actorUserId ?? matrixCodeServerUrl(),
+  serverUrl?: string
+): Promise<ModelResponse> {
+  const request = actorScopedRequest(actorUserIdOrServerUrl, serverUrl);
+  let response: Response;
+  try {
+    response = await fetch(projectUrl(request.serverUrl, projectId, `/roles/${encodeURIComponent(role)}/model-requests/stream`), {
+      method: 'POST',
+      headers: jsonHeaders({ ...request.headers, Accept: 'text/event-stream' }, true),
+      body: JSON.stringify(input)
+    });
+  } catch {
+    throw new Error('团队服务器连接失败');
+  }
+
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response));
+  }
+  if (!response.body) {
+    throw new Error('团队服务器未返回模型流式响应');
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let completedResponse: ModelResponse | null = null;
+
+  const handleEvent = (rawEvent: string) => {
+    const event = parseServerSentEvent(rawEvent);
+    if (!event.data.trim()) {
+      return;
+    }
+    if (event.event === 'delta') {
+      const payload = parseModelStreamPayload<{ delta?: unknown }>(event);
+      if (typeof payload.delta === 'string' && payload.delta.length > 0) {
+        onDelta(payload.delta);
+      }
+      return;
+    }
+    if (event.event === 'completed') {
+      completedResponse = parseModelStreamPayload<ModelResponse>(event);
+      return;
+    }
+    if (event.event === 'error') {
+      const payload = parseModelStreamPayload<{ message?: unknown }>(event);
+      throw new Error(typeof payload.message === 'string' && payload.message.trim() ? payload.message : '模型流式请求失败');
+    }
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (value) {
+      buffer += decoder.decode(value, { stream: !done });
+    }
+    let next = nextServerSentEvent(buffer);
+    while (next) {
+      handleEvent(next.rawEvent);
+      buffer = next.rest;
+      next = nextServerSentEvent(buffer);
+    }
+    if (done) {
+      buffer += decoder.decode();
+      break;
+    }
+  }
+  if (buffer.trim()) {
+    handleEvent(buffer);
+  }
+  if (!completedResponse) {
+    throw new Error('模型流式请求未返回完成事件');
+  }
+  return completedResponse;
 }
 
 /**

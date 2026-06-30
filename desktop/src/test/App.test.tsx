@@ -31,7 +31,7 @@ import {
   configureDeploymentTarget,
   createBug,
   createProductDrafts,
-  createRoleModelRequest,
+  createRoleModelRequestStream,
   createProjectInvitation,
   createProjectUser,
   decideLocalCommandApproval,
@@ -99,7 +99,7 @@ vi.mock('../api/client', () => ({
   loadRuntimeDiagnostics: vi.fn(),
   updateRoleAgentConfig: vi.fn(),
   createProductDrafts: vi.fn(),
-  createRoleModelRequest: vi.fn(),
+  createRoleModelRequestStream: vi.fn(),
   createProjectInvitation: vi.fn(),
   freezeDocument: vi.fn(),
   issueActorToken: vi.fn(),
@@ -807,7 +807,7 @@ const 加载角色智能体配置 = vi.mocked(loadRoleAgentConfigs);
 const 加载运行诊断 = vi.mocked(loadRuntimeDiagnostics);
 const 更新角色智能体配置 = vi.mocked(updateRoleAgentConfig);
 const 生成需求草稿 = vi.mocked(createProductDrafts);
-const 创建角色模型请求 = vi.mocked(createRoleModelRequest);
+const 创建角色模型流式请求 = vi.mocked(createRoleModelRequestStream);
 const 创建项目邀请 = vi.mocked(createProjectInvitation);
 const 冻结文档 = vi.mocked(freezeDocument);
 const 签发身份令牌 = vi.mocked(issueActorToken);
@@ -1330,7 +1330,7 @@ describe('MatrixCode 桌面工作台', () => {
     清理过期项目邀请.mockResolvedValue([]);
     加载运行诊断.mockResolvedValue(运行诊断报告);
     准备编码智能体执行.mockResolvedValue(编码智能体执行准备计划);
-    创建角色模型请求.mockResolvedValue({
+    创建角色模型流式请求.mockResolvedValue({
       requestId: 'composer-request-1',
       answer: '已根据当前工作台上下文生成执行建议。',
       contextManifest: {
@@ -1539,8 +1539,8 @@ describe('MatrixCode 桌面工作台', () => {
     fireEvent.click(screen.getByRole('menuitemradio', { name: /max/ }));
     fireEvent.click(screen.getByRole('button', { name: '发送给角色智能体' }));
 
-    await waitFor(() => expect(创建角色模型请求).toHaveBeenCalled());
-    expect(创建角色模型请求).toHaveBeenCalledWith(
+    await waitFor(() => expect(创建角色模型流式请求).toHaveBeenCalled());
+    expect(创建角色模型流式请求).toHaveBeenCalledWith(
       'demo',
       'product',
       expect.objectContaining({
@@ -1554,9 +1554,10 @@ describe('MatrixCode 桌面工作台', () => {
         goalMode: false,
         tokenEconomy: true
       }),
+      expect.any(Function),
       'user-product'
     );
-    const requestInput = 创建角色模型请求.mock.calls.at(-1)?.[2];
+    const requestInput = 创建角色模型流式请求.mock.calls.at(-1)?.[2];
     expect(requestInput?.contextBlocks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ type: 'WORKBENCH_STAGE' }),
@@ -1589,14 +1590,14 @@ describe('MatrixCode 桌面工作台', () => {
         ]
       }
     };
-    let 完成请求: (value: Awaited<ReturnType<typeof createRoleModelRequest>>) => void = () => {};
+    let 完成请求: (value: Awaited<ReturnType<typeof createRoleModelRequestStream>>) => void = () => {};
 
     加载项目工作台.mockResolvedValue(重复模型工作台);
-    创建角色模型请求.mockImplementationOnce(
+    创建角色模型流式请求.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
           完成请求 = resolve;
-        }) as ReturnType<typeof createRoleModelRequest>
+        }) as ReturnType<typeof createRoleModelRequestStream>
     );
 
     render(<App />);
@@ -1639,9 +1640,55 @@ describe('MatrixCode 桌面工作台', () => {
     });
   });
 
+  it('底部Composer会在模型完成前实时展示流式片段', async () => {
+    let 完成请求: (value: Awaited<ReturnType<typeof createRoleModelRequestStream>>) => void = () => {};
+    创建角色模型流式请求.mockImplementationOnce(
+      (_projectId, _role, _input, onDelta) =>
+        new Promise((resolve) => {
+          onDelta('第一段');
+          onDelta('第二段');
+          完成请求 = resolve;
+        }) as ReturnType<typeof createRoleModelRequestStream>
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText('支付系统重构')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Agent 对话输入'), {
+      target: { value: '请输出实时计划' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '发送给角色智能体' }));
+
+    expect(await screen.findByText('模型流式回复')).toBeTruthy();
+    expect(screen.getByText('第一段第二段')).toBeTruthy();
+
+    await act(async () => {
+      完成请求({
+        requestId: 'composer-request-streaming',
+        answer: '第一段第二段',
+        contextManifest: {
+          role: 'PRODUCT',
+          blocks: [],
+          omittedTypes: []
+        },
+        usage: 基础工作台.modelGateway.recentRequests[0].usage,
+        binding: 基础工作台.modelGateway.bindings[0],
+        promptContract: {
+          role: 'PRODUCT',
+          model: 'matrixcode-local-product',
+          toolContractVersion: 'tools-v1',
+          systemPrefix: 'stable prefix',
+          stablePrefixHash: 'fp-cache-001',
+          estimatedStablePrefixTokens: 128
+        },
+        createdAt: '2026-06-25T08:22:30Z'
+      });
+    });
+  });
+
   it('模型长回复默认摘要展示并支持展开全文', async () => {
     const 长回复 = `第一行结论。${'需要压缩展示的详细推理内容。'.repeat(80)}最后一句只应在展开后完整出现。`;
-    创建角色模型请求.mockResolvedValueOnce({
+    创建角色模型流式请求.mockResolvedValueOnce({
       requestId: 'composer-request-long',
       answer: 长回复,
       contextManifest: {
@@ -2094,6 +2141,25 @@ describe('MatrixCode 桌面工作台', () => {
         roleKey: 'DEVELOPER'
       }, 'admin');
     });
+  });
+
+  it('admin 密码登录后首次刷新责任审计使用登录用户而不是角色默认用户', async () => {
+    加载项目工作台.mockRejectedValueOnce(new Error('需要登录态'));
+    登录身份.mockResolvedValueOnce({
+      userId: 'admin',
+      token: 'satoken-admin',
+      expiresAt: '2026-06-30T12:00:00Z'
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText('需要登录 MatrixCode')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'admin-secret' } });
+    fireEvent.click(screen.getByRole('button', { name: '登录并加载工作台' }));
+
+    await waitFor(() => expect(加载项目工作台).toHaveBeenLastCalledWith('demo', 'admin'));
+    await waitFor(() => expect(加载Agent运行用户审计).toHaveBeenLastCalledWith('demo', 'admin', 50));
+    expect(加载Agent运行用户审计).not.toHaveBeenCalledWith('demo', 'user-product', 50);
   });
 
   it('可以在配置中心治理项目邀请生命周期', async () => {

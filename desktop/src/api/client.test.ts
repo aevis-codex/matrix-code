@@ -15,6 +15,7 @@ import {
   createBug,
   createProductDrafts,
   createRoleModelRequest,
+  createRoleModelRequestStream,
   decideLocalCommandApproval,
   bindRoleModel,
   freezeDocument,
@@ -1321,6 +1322,90 @@ describe('角色工作台 API 客户端', () => {
       },
       body: JSON.stringify(input)
     });
+  });
+
+  it('流式创建角色模型请求时逐段回调并返回完成响应', async () => {
+    const encoder = new TextEncoder();
+    const completedResponse = {
+      requestId: 'stream-request-1',
+      answer: '第一段第二段',
+      contextManifest: {
+        role: 'PRODUCT',
+        blocks: [{ type: 'PROJECT_RULE', summary: '保持中文输出', allowedByGate: true }],
+        omittedTypes: []
+      },
+      usage: {
+        roleSessionId: 'demo:PRODUCT',
+        model: 'qwen-plus',
+        cacheHitTokens: 64,
+        cacheMissInputTokens: 16,
+        outputTokens: 8,
+        cacheHitRate: 0.8,
+        estimatedCost: 0.001,
+        currency: 'CNY'
+      },
+      binding: {
+        projectId: 'demo',
+        role: 'PRODUCT',
+        providerId: 'qwen',
+        model: 'qwen-plus',
+        currency: 'CNY',
+        cacheHitPerMillion: 0,
+        cacheMissInputPerMillion: 0,
+        outputPerMillion: 0,
+        contextBudgetTokens: 32000,
+        toolContractVersion: 'tools-v1'
+      },
+      promptContract: {
+        role: 'PRODUCT',
+        model: 'qwen-plus',
+        toolContractVersion: 'tools-v1',
+        systemPrefix: 'stable prefix',
+        stablePrefixHash: 'fp-cache-001',
+        estimatedStablePrefixTokens: 128
+      },
+      createdAt: '2026-06-30T08:00:00Z'
+    };
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('event:delta\ndata:{"delta":"第一段"}\n\n'));
+        controller.enqueue(encoder.encode('event:delta\ndata:{"delta":"第二段"}\n\n'));
+        controller.enqueue(encoder.encode(`event:completed\ndata:${JSON.stringify(completedResponse)}\n\n`));
+        controller.close();
+      }
+    });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      body
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const input = {
+      actorUserId: 'user-product',
+      instruction: '支付失败后允许用户重新发起支付。',
+      contextBlocks: [{ type: 'PROJECT_RULE', summary: '保持中文输出', allowedByGate: true }]
+    };
+    const chunks: string[] = [];
+
+    const response = await createRoleModelRequestStream(
+      'demo',
+      'product',
+      input,
+      (delta) => chunks.push(delta),
+      'user-product',
+      'http://localhost:8080'
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith('http://localhost:8080/api/projects/demo/roles/product/model-requests/stream', {
+      method: 'POST',
+      headers: {
+        Accept: 'text/event-stream',
+        'Content-Type': 'application/json',
+        'X-MatrixCode-User-Id': 'user-product'
+      },
+      body: JSON.stringify(input)
+    });
+    expect(chunks).toEqual(['第一段', '第二段']);
+    expect(response).toEqual(completedResponse);
   });
 
   it('按 Agent 运行读取模型请求分页和成本趋势', async () => {

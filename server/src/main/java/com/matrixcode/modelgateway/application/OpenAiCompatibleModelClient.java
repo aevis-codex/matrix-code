@@ -21,6 +21,8 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
+import java.util.stream.Stream;
 
 @Component
 public class OpenAiCompatibleModelClient implements ModelCompletionClient {
@@ -67,7 +69,7 @@ public class OpenAiCompatibleModelClient implements ModelCompletionClient {
     ) {
         var apiKey = apiKey(provider);
         var endpoint = chatCompletionsEndpoint(provider.baseUrl());
-        var requestBody = requestBody(provider, binding, contract, instruction, cacheScopeId, runtimeOptions);
+        var requestBody = requestBody(provider, binding, contract, instruction, cacheScopeId, runtimeOptions, false);
         try {
             var request = HttpRequest.newBuilder(URI.create(endpoint))
                     .timeout(REQUEST_TIMEOUT)
@@ -89,6 +91,46 @@ public class OpenAiCompatibleModelClient implements ModelCompletionClient {
     }
 
     /**
+     * 执行 OpenAI-compatible 流式补全请求。
+     *
+     * <p>作用域：真实模型供应商调用；场景：Composer 需要边生成边展示时读取 SSE `delta.content`，
+     * 并在结束后返回完整回答和供应商 usage，用于后续成本与缓存指标记录。</p>
+     */
+    @Override
+    public ModelCompletionResult stream(
+            ModelProvider provider,
+            RoleModelBinding binding,
+            PromptContract contract,
+            String instruction,
+            String cacheScopeId,
+            ModelRequestRuntimeOptions runtimeOptions,
+            Consumer<String> deltaConsumer
+    ) {
+        var apiKey = apiKey(provider);
+        var endpoint = chatCompletionsEndpoint(provider.baseUrl());
+        var requestBody = requestBody(provider, binding, contract, instruction, cacheScopeId, runtimeOptions, true);
+        try {
+            var request = HttpRequest.newBuilder(URI.create(endpoint))
+                    .timeout(REQUEST_TIMEOUT)
+                    .header("Authorization", "Bearer " + apiKey)
+                    .header("Content-Type", "application/json")
+                    .header("Accept", "text/event-stream")
+                    .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(requestBody)))
+                    .build();
+            var response = httpClient.send(request, HttpResponse.BodyHandlers.ofLines());
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                throw new IllegalStateException("模型供应商请求失败：" + provider.id() + " HTTP " + response.statusCode());
+            }
+            return completionFromStream(response.body(), provider.id(), deltaConsumer);
+        } catch (IOException exception) {
+            throw new IllegalStateException("模型供应商流式请求失败：" + provider.id(), exception);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("模型供应商流式请求被中断：" + provider.id(), exception);
+        }
+    }
+
+    /**
      * 构建 OpenAI 兼容请求体。
      *
      * <p>DeepSeek 支持按 `user_id` 隔离上下文缓存；这里只对 DeepSeek 写入该字段，避免其他
@@ -100,7 +142,8 @@ public class OpenAiCompatibleModelClient implements ModelCompletionClient {
             PromptContract contract,
             String instruction,
             String cacheScopeId,
-            ModelRequestRuntimeOptions runtimeOptions
+            ModelRequestRuntimeOptions runtimeOptions,
+            boolean stream
     ) {
         var effectiveRuntimeOptions = runtimeOptions == null
                 ? ModelRequestRuntimeOptions.defaults()
@@ -117,6 +160,9 @@ public class OpenAiCompatibleModelClient implements ModelCompletionClient {
         }
         if (supportsReasoningEffort(provider, binding)) {
             effectiveRuntimeOptions.explicitReasoningEffort().ifPresent(effort -> requestBody.put("reasoning_effort", effort));
+        }
+        if (stream) {
+            requestBody.put("stream", true);
         }
         return requestBody;
     }
@@ -179,5 +225,90 @@ public class OpenAiCompatibleModelClient implements ModelCompletionClient {
             );
         }
         return ModelCompletionResult.withoutProviderUsage(content);
+    }
+
+    /**
+     * 解析供应商 SSE 响应。
+     *
+     * <p>作用域：OpenAI-compatible 客户端内部；场景：兼容 `data: {...}` 和 `[DONE]` 事件，
+     * 只把模型正文片段回调给前端，不把 usage 或其他控制字段当成正文输出。</p>
+     */
+    private ModelCompletionResult completionFromStream(
+            Stream<String> responseLines,
+            String providerId,
+            Consumer<String> deltaConsumer
+    ) throws IOException {
+        var answer = new StringBuilder();
+        var usageHolder = new ProviderUsageHolder();
+        try (responseLines) {
+            var eventData = new StringBuilder();
+            var iterator = responseLines.iterator();
+            while (iterator.hasNext()) {
+                var line = iterator.next();
+                if (line == null) {
+                    continue;
+                }
+                if (line.isBlank()) {
+                    parseStreamEvent(eventData.toString(), answer, usageHolder, deltaConsumer);
+                    eventData.setLength(0);
+                    continue;
+                }
+                if (line.startsWith("data:")) {
+                    if (!eventData.isEmpty()) {
+                        eventData.append('\n');
+                    }
+                    eventData.append(line.substring("data:".length()).stripLeading());
+                }
+            }
+            if (!eventData.isEmpty()) {
+                parseStreamEvent(eventData.toString(), answer, usageHolder, deltaConsumer);
+            }
+        }
+        if (answer.isEmpty()) {
+            throw new IllegalStateException("模型供应商返回内容为空：" + providerId);
+        }
+        if (usageHolder.usage != null && usageHolder.usage.hasPromptCacheTokens()) {
+            return ModelCompletionResult.withProviderUsage(answer.toString(), usageHolder.usage);
+        }
+        return ModelCompletionResult.withoutProviderUsage(answer.toString());
+    }
+
+    /**
+     * 解析单个 SSE data 事件并抽取正文片段和 usage。
+     */
+    private void parseStreamEvent(
+            String data,
+            StringBuilder answer,
+            ProviderUsageHolder usageHolder,
+            Consumer<String> deltaConsumer
+    ) throws IOException {
+        var normalized = data == null ? "" : data.strip();
+        if (normalized.isBlank() || "[DONE]".equals(normalized)) {
+            return;
+        }
+        var root = objectMapper.readTree(normalized);
+        var choice = root.path("choices").path(0);
+        var delta = choice.path("delta").path("content").asText("");
+        if (delta.isEmpty()) {
+            delta = choice.path("message").path("content").asText("");
+        }
+        if (!delta.isEmpty()) {
+            answer.append(delta);
+            if (deltaConsumer != null) {
+                deltaConsumer.accept(delta);
+            }
+        }
+        var usage = root.path("usage");
+        if (usage.has("prompt_cache_hit_tokens") || usage.has("prompt_cache_miss_tokens")) {
+            usageHolder.usage = new ProviderTokenUsage(
+                    usage.path("prompt_cache_hit_tokens").asLong(0L),
+                    usage.path("prompt_cache_miss_tokens").asLong(0L),
+                    usage.path("completion_tokens").asLong(0L)
+            );
+        }
+    }
+
+    private static final class ProviderUsageHolder {
+        private ProviderTokenUsage usage;
     }
 }

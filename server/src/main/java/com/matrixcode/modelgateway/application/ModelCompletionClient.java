@@ -7,6 +7,8 @@ import com.matrixcode.modelgateway.domain.ModelRequestRuntimeOptions;
 import com.matrixcode.modelgateway.domain.PromptContract;
 import com.matrixcode.modelgateway.domain.RoleModelBinding;
 
+import java.util.function.Consumer;
+
 /**
  * 模型补全客户端接口。
  *
@@ -47,5 +49,27 @@ public interface ModelCompletionClient {
             ModelRequestRuntimeOptions runtimeOptions
     ) {
         return complete(provider, binding, contract, instruction, cacheScopeId);
+    }
+
+    /**
+     * 执行一次流式模型补全请求。
+     *
+     * <p>作用域：模型网关运行链路；场景：前端 Composer 需要边生成边展示时调用。默认实现兼容
+     * 非流式客户端：先完成同步请求，再把完整回答作为一个片段回调给调用方。</p>
+     */
+    default ModelCompletionResult stream(
+            ModelProvider provider,
+            RoleModelBinding binding,
+            PromptContract contract,
+            String instruction,
+            String cacheScopeId,
+            ModelRequestRuntimeOptions runtimeOptions,
+            Consumer<String> deltaConsumer
+    ) {
+        var result = complete(provider, binding, contract, instruction, cacheScopeId, runtimeOptions);
+        if (deltaConsumer != null && !result.answer().isBlank()) {
+            deltaConsumer.accept(result.answer());
+        }
+        return result;
     }
 }

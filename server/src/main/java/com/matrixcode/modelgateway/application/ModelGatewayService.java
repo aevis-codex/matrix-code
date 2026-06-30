@@ -44,6 +44,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -302,7 +303,26 @@ public class ModelGatewayService {
         );
     }
 
+    /**
+     * 发起一次同步角色模型请求。
+     *
+     * <p>作用域：模型网关运行链路；场景：非实时任务或服务端内部调用需要等待完整回答后一次性返回。</p>
+     */
     public ModelResponse request(ModelRequestCommand command) {
+        return request(command, null);
+    }
+
+    /**
+     * 发起一次流式角色模型请求。
+     *
+     * <p>作用域：模型网关运行链路；场景：前端 Composer 需要实时展示模型增量输出。方法在流式回调时
+     * 不提前持久化请求，只有模型完整返回后才统一记录 usage、审计事件和 Agent trace。</p>
+     */
+    public ModelResponse stream(ModelRequestCommand command, Consumer<String> deltaConsumer) {
+        return request(command, Objects.requireNonNull(deltaConsumer, "deltaConsumer 不能为空"));
+    }
+
+    private ModelResponse request(ModelRequestCommand command, Consumer<String> deltaConsumer) {
         var roleConfig = roleAgentConfigService.require(command.projectId(), command.role());
         if (!roleConfig.enabled()) {
             throw new IllegalArgumentException("角色智能体未启用：" + roleConfig.displayName());
@@ -331,14 +351,25 @@ public class ModelGatewayService {
                 binding.model(),
                 roleConfig.cacheScopeStrategy()
         );
-        var completion = modelClient(provider).complete(
-                provider,
-                binding,
-                contract,
-                renderedInstruction,
-                cacheScopeId,
-                command.runtimeOptions()
-        );
+        var client = modelClient(provider);
+        var completion = deltaConsumer == null
+                ? client.complete(
+                        provider,
+                        binding,
+                        contract,
+                        renderedInstruction,
+                        cacheScopeId,
+                        command.runtimeOptions()
+                )
+                : client.stream(
+                        provider,
+                        binding,
+                        contract,
+                        renderedInstruction,
+                        cacheScopeId,
+                        command.runtimeOptions(),
+                        deltaConsumer
+                );
         var answer = completion.answer();
         var contextTypes = manifest.blocks().stream()
                 .map(block -> block.type())

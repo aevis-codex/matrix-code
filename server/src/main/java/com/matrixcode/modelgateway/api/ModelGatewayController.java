@@ -20,6 +20,7 @@ import com.matrixcode.modelgateway.domain.RoleModelBinding;
 import com.matrixcode.roleagent.application.RoleAgentConfigCommand;
 import com.matrixcode.roleagent.application.RoleAgentConfigService;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -27,8 +28,12 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * 模型网关和向量上下文 API。
@@ -201,6 +206,49 @@ public class ModelGatewayController {
     }
 
     /**
+     * 流式发起一次角色模型请求。
+     *
+     * <p>作用域：项目成员且操作者一致；场景：底部 Agent Composer 需要把供应商增量输出实时推送到
+     * 工作台上方输出台。事件约定：`delta` 返回正文片段，`completed` 返回完整 `ModelResponse`，
+     * `error` 返回可展示错误消息。</p>
+     */
+    @PostMapping(value = "/roles/{role}/model-requests/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter streamModelRequest(
+            @PathVariable String projectId,
+            @PathVariable String role,
+            @RequestBody ModelRequestCommandBody command,
+            HttpServletRequest request
+    ) {
+        requestPermissionGuard.assertProjectMemberActor(request, projectId, command.actorUserId());
+        var emitter = new SseEmitter(0L);
+        var requestCommand = new ModelRequestCommand(
+                projectId,
+                ModelRole.fromPath(role),
+                command.actorUserId(),
+                command.agentRunId(),
+                command.instruction(),
+                command.contextBlocks(),
+                command.runtimeOptions()
+        );
+        CompletableFuture.runAsync(() -> {
+            try {
+                var response = gatewayService.stream(requestCommand, delta -> sendEvent(
+                        emitter,
+                        "delta",
+                        new ModelStreamDelta(delta)
+                ));
+                sendEvent(emitter, "completed", response);
+                emitter.complete();
+            } catch (UncheckedIOException exception) {
+                sendError(emitter, exception.getCause() == null ? exception.getMessage() : exception.getCause().getMessage());
+            } catch (Exception exception) {
+                sendError(emitter, exception.getMessage());
+            }
+        });
+        return emitter;
+    }
+
+    /**
      * 写入角色向量上下文文档。
      *
      * <p>作用域：项目成员；场景：把项目知识、交接内容或领域上下文写入 Milvus/内存向量库。</p>
@@ -305,6 +353,54 @@ public class ModelGatewayController {
                     Boolean.TRUE.equals(goalMode),
                     Boolean.TRUE.equals(tokenEconomy)
             );
+        }
+    }
+
+    /**
+     * SSE 增量正文事件。
+     *
+     * <p>作用域：模型流式 API；场景：前端把 `delta` 追加到当前输出台。</p>
+     */
+    public record ModelStreamDelta(String delta) {
+    }
+
+    /**
+     * SSE 错误事件。
+     *
+     * <p>作用域：模型流式 API；场景：供应商或服务端异常时让前端展示稳定错误消息。</p>
+     */
+    public record ModelStreamError(String message) {
+    }
+
+    /**
+     * 向 SSE 连接写入一个具名事件。
+     *
+     * <p>作用域：模型流式 API 内部；场景：把 delta、completed 等事件统一写出，写入失败时转为
+     * `UncheckedIOException` 交给外层结束连接。</p>
+     */
+    private void sendEvent(SseEmitter emitter, String name, Object data) {
+        try {
+            emitter.send(SseEmitter.event().name(name).data(data));
+        } catch (IOException exception) {
+            throw new UncheckedIOException(exception);
+        }
+    }
+
+    /**
+     * 向 SSE 连接写入错误事件并关闭连接。
+     *
+     * <p>作用域：模型流式 API 内部；场景：供应商异常、服务异常或客户端断开时，保证前端收到稳定错误
+     * 结构，且服务端不会继续持有 emitter。</p>
+     */
+    private void sendError(SseEmitter emitter, String message) {
+        try {
+            emitter.send(SseEmitter.event().name("error").data(new ModelStreamError(
+                    message == null || message.isBlank() ? "模型流式请求失败" : message
+            )));
+        } catch (IOException ignored) {
+            // 客户端已断开时无需继续写入。
+        } finally {
+            emitter.complete();
         }
     }
 

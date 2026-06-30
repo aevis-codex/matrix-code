@@ -7,7 +7,7 @@ import {
   claimNextAgentRun,
   configureComposeEnvironment,
   configureDeploymentTarget,
-  createRoleModelRequest,
+  createRoleModelRequestStream,
   createBug,
   createProductDrafts,
   decideLocalCommandApproval,
@@ -108,6 +108,7 @@ type ComposerIntentState = {
 type ComposerSubmitState =
   | { status: 'idle' }
   | { status: 'sending'; submittedInstruction: string; submittedAt: string }
+  | { status: 'streaming'; submittedInstruction: string; submittedAt: string; partialAnswer: string }
   | { status: 'answered'; submittedInstruction: string; submittedAt: string; response: ModelResponse }
   | { status: 'error'; submittedInstruction: string; submittedAt: string; message: string };
 
@@ -692,18 +693,29 @@ function AgentOutputConsole({
   const recentEvents = events.slice(0, 3);
   const liveDraft = summarizeComposerDraft(composerDraft);
   const answeredRequestId =
-    composerSubmitState.status === 'answered' ? composerSubmitState.response.requestId : composerSubmitState.status;
+    composerSubmitState.status === 'answered'
+      ? composerSubmitState.response.requestId
+      : composerSubmitState.status === 'streaming'
+        ? composerSubmitState.submittedAt
+        : composerSubmitState.status;
   const intentLabels = [
     intentState.plan ? '计划' : '',
     intentState.goal ? '目标' : '',
     intentState.tokenEconomy ? '省 token' : ''
   ].filter(Boolean);
-  const modelAnswer = composerSubmitState.status === 'answered' ? composerSubmitState.response.answer : '';
+  const modelAnswer =
+    composerSubmitState.status === 'answered'
+      ? composerSubmitState.response.answer
+      : composerSubmitState.status === 'streaming'
+        ? composerSubmitState.partialAnswer
+        : '';
   const modelAnswerPreview = summarizeModelAnswer(modelAnswer);
   const modelAnswerIsLong = composerSubmitState.status === 'answered' && modelAnswerPreview !== modelAnswer.trim();
   const displayedModelAnswer = answerExpanded || !modelAnswerIsLong ? modelAnswer.trim() : modelAnswerPreview;
   const submitStatusLabel =
-    composerSubmitState.status === 'sending'
+    composerSubmitState.status === 'streaming'
+      ? '流式输出中'
+      : composerSubmitState.status === 'sending'
       ? '模型请求中'
       : composerSubmitState.status === 'answered'
         ? '已返回'
@@ -729,17 +741,33 @@ function AgentOutputConsole({
       <section className={`agent-live-preview agent-live-preview--${composerSubmitState.status}`} aria-label="实时输出预览">
         <header>
           <div>
-            <strong>{composerSubmitState.status === 'answered' ? '模型回复' : '实时上下文预览'}</strong>
+            <strong>
+              {composerSubmitState.status === 'answered'
+                ? '模型回复'
+                : composerSubmitState.status === 'streaming'
+                  ? '模型流式回复'
+                  : '实时上下文预览'}
+            </strong>
             <span>{currentModelRef}</span>
           </div>
           <em>{composerApprovalModeLabels[approvalMode]} · effort {composerReasoningEffortLabels[reasoningEffort]}</em>
         </header>
-        {composerSubmitState.status === 'answered' ? (
+        {composerSubmitState.status === 'answered' || composerSubmitState.status === 'streaming' ? (
           <div className="agent-live-preview__answer">
-            <pre aria-label={modelAnswerIsLong && answerExpanded ? '模型回复全文' : '模型回复摘要'}>
-              {displayedModelAnswer}
+            <pre
+              aria-label={
+                composerSubmitState.status === 'streaming'
+                  ? '模型流式回复'
+                  : modelAnswerIsLong && answerExpanded
+                    ? '模型回复全文'
+                    : '模型回复摘要'
+              }
+            >
+              {composerSubmitState.status === 'streaming'
+                ? displayedModelAnswer || '正在建立流式响应...'
+                : displayedModelAnswer}
             </pre>
-            {modelAnswerIsLong ? (
+            {composerSubmitState.status === 'answered' && modelAnswerIsLong ? (
               <button
                 aria-expanded={answerExpanded}
                 className="agent-live-preview__expand"
@@ -1269,7 +1297,7 @@ function App() {
         loadProjectMembers(workbench.projectId, requestActorId).catch(() => []),
         loadAgentRuntimeSnapshot(workbench.projectId, requestActorId)
       ]);
-      const auditActorId = resolveCurrentActorId(activeRole, projectMembers, selectedActorUserId);
+      const auditActorId = resolveCurrentActorId(activeRole, projectMembers, workbenchActorId ?? selectedActorUserId);
       const agentRunUserAudit = await loadAgentRunUserAudit(workbench.projectId, auditActorId, 50).catch(() =>
         emptyAgentRunUserAudit(workbench.projectId, auditActorId)
       );
@@ -1856,7 +1884,7 @@ function App() {
     const submittedAt = new Date().toISOString();
     setComposerSubmitState({ status: 'sending', submittedInstruction: instruction, submittedAt });
     try {
-      const response = await createRoleModelRequest(
+      const response = await createRoleModelRequestStream(
         currentWorkbench.projectId,
         rolePath,
         {
@@ -1870,6 +1898,22 @@ function App() {
           planMode: composerIntentState.plan,
           goalMode: composerIntentState.goal,
           tokenEconomy: composerIntentState.tokenEconomy
+        },
+        (delta) => {
+          setComposerSubmitState((current) => {
+            if (
+              (current.status === 'sending' || current.status === 'streaming') &&
+              current.submittedAt === submittedAt
+            ) {
+              return {
+                status: 'streaming',
+                submittedInstruction: instruction,
+                submittedAt,
+                partialAnswer: (current.status === 'streaming' ? current.partialAnswer : '') + delta
+              };
+            }
+            return current;
+          });
         },
         currentActorId
       );
@@ -1965,7 +2009,7 @@ function App() {
   const hasServerRuntimeNotifications = Array.isArray(workbench.runtimeNotifications);
   const modelOptions = readyModelRefs.length ? readyModelRefs : uniqueModelRefs([formatModelBindingRef(workbench.modelGateway.bindings[0])]);
   const currentComposerModelRef = composerModelRef || modelOptions[0];
-  const composerSubmitting = composerSubmitState.status === 'sending';
+  const composerSubmitting = composerSubmitState.status === 'sending' || composerSubmitState.status === 'streaming';
 
   return (
     <main className="workspace">

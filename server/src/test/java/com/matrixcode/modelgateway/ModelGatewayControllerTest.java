@@ -27,8 +27,11 @@ import java.util.List;
 import java.util.Map;
 
 import static com.matrixcode.identity.api.RequestActorResolver.CURRENT_USER_HEADER;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -113,6 +116,29 @@ class ModelGatewayControllerTest {
                         .header(CURRENT_USER_HEADER, "user-product"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.recentRequests[0].actorUserId").value("user-product"));
+    }
+
+    @Test
+    void 产品角色可以流式创建模型请求() throws Exception {
+        repository.ensureMember(member("demo", "user-product", "PRODUCT"));
+
+        var result = mockMvc.perform(post("/api/projects/demo/roles/product/model-requests/stream")
+                        .header(CURRENT_USER_HEADER, "user-product")
+                        .accept(MediaType.TEXT_EVENT_STREAM)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"actorUserId":"user-product","instruction":"支付失败后允许用户重新发起支付。","contextBlocks":[{"type":"PROJECT_RULE","summary":"保持中文输出","allowedByGate":true}]}
+                                """))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        result.getAsyncResult(5_000L);
+        mockMvc.perform(asyncDispatch(result))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:delta")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"delta\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:completed")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"requestId\"")));
     }
 
     @Test

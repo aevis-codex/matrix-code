@@ -149,6 +149,42 @@ class OpenAiCompatibleModelClientTest {
         });
     }
 
+    @Test
+    void 流式请求会开启Stream并逐段回调模型输出() throws Exception {
+        var httpClient = new CapturingHttpClient("""
+                data: {"choices":[{"delta":{"content":"第一段"}}]}
+
+                data: {"choices":[{"delta":{"content":"第二段"}}],"usage":{"prompt_cache_hit_tokens":64,"prompt_cache_miss_tokens":16,"completion_tokens":8}}
+
+                data: [DONE]
+
+                """);
+        var client = new OpenAiCompatibleModelClient(
+                httpClient,
+                objectMapper
+        );
+        var chunks = new java.util.ArrayList<String>();
+
+        var result = client.stream(
+                provider("deepseek"),
+                binding("deepseek", "deepseek-chat"),
+                contract(),
+                "只回答 ok",
+                "matrixcode_demo_DEVELOPER_deepseek_deepseek-chat",
+                ModelRequestRuntimeOptions.defaults(),
+                chunks::add
+        );
+
+        assertThat(objectMapper.readTree(httpClient.requestBody()).path("stream").asBoolean()).isTrue();
+        assertThat(chunks).containsExactly("第一段", "第二段");
+        assertThat(result.answer()).isEqualTo("第一段第二段");
+        assertThat(result.usage()).hasValueSatisfying(usage -> {
+            assertThat(usage.cacheHitTokens()).isEqualTo(64);
+            assertThat(usage.cacheMissInputTokens()).isEqualTo(16);
+            assertThat(usage.outputTokens()).isEqualTo(8);
+        });
+    }
+
     private ModelProvider provider(String id) {
         return new ModelProvider(
                 id,
@@ -258,7 +294,8 @@ class OpenAiCompatibleModelClientTest {
         public <T> HttpResponse<T> send(HttpRequest request, HttpResponse.BodyHandler<T> responseBodyHandler)
                 throws IOException {
             requestBody = bodyPublisherToString(request.bodyPublisher().orElseThrow());
-            return (HttpResponse<T>) new StringResponse(request, responseBody);
+            Object body = requestBody.contains("\"stream\":true") ? responseBody.lines() : responseBody;
+            return new GenericResponse<>(request, (T) body);
         }
 
         @Override
@@ -332,14 +369,14 @@ class OpenAiCompatibleModelClientTest {
         private Throwable error;
     }
 
-    private record StringResponse(HttpRequest request, String responseBody) implements HttpResponse<String> {
+    private record GenericResponse<T>(HttpRequest request, T responseBody) implements HttpResponse<T> {
         @Override
         public int statusCode() {
             return 200;
         }
 
         @Override
-        public Optional<HttpResponse<String>> previousResponse() {
+        public Optional<HttpResponse<T>> previousResponse() {
             return Optional.empty();
         }
 
@@ -349,7 +386,7 @@ class OpenAiCompatibleModelClientTest {
         }
 
         @Override
-        public String body() {
+        public T body() {
             return responseBody;
         }
 
