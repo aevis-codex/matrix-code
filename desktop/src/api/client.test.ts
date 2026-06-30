@@ -40,6 +40,7 @@ import {
   loadRuntimeDiagnostics,
   loadUserAuditRecords,
   loadUserProjects,
+  changeActorPassword,
   loginActorSession,
   logoutActorSession,
   kickoutActorSessions,
@@ -1458,6 +1459,33 @@ describe('角色工作台 API 客户端', () => {
       }
     });
     expect(token.token).toBe('sa-token');
+  });
+
+  it('修改当前用户密码时透传当前用户和本地令牌', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 204
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    localStorage.setItem('matrixcode.actorToken', 'sa-token');
+
+    await changeActorPassword(
+      'demo',
+      { oldPassword: 'old-secret', newPassword: 'new-secret' },
+      'user-dev',
+      'http://localhost:8080'
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith('http://localhost:8080/api/projects/demo/identity/auth/password', {
+      method: 'POST',
+      body: JSON.stringify({ oldPassword: 'old-secret', newPassword: 'new-secret' }),
+      headers: {
+        Accept: 'application/json',
+        Authorization: 'Bearer sa-token',
+        'Content-Type': 'application/json',
+        'X-MatrixCode-User-Id': 'user-dev'
+      }
+    });
   });
 
   it('退出 Sa-Token 会话时透传当前用户和本地令牌', async () => {

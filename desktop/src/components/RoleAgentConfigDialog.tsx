@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import {
   addProjectMember,
   batchUpdateProjectMembers,
+  changeActorPassword,
   createProjectInvitation,
   createProjectUser,
   expireProjectInvitations,
@@ -859,12 +860,16 @@ function IdentityTokenPanel({ actorUserId, projectId, open, onActorSessionChange
   const [username, setUsername] = useState(readStoredActorTokenStatus()?.userId ?? 'admin');
   const [selectedUserId, setSelectedUserId] = useState(readStoredActorTokenStatus()?.userId ?? '');
   const [password, setPassword] = useState('');
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [status, setStatus] = useState<ActorTokenStatus | null>(() => readStoredActorTokenStatus());
   const [sessions, setSessions] = useState<ActorSessionInfo[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
 
   async function refreshMembers() {
     setLoading(true);
@@ -941,6 +946,7 @@ function IdentityTokenPanel({ actorUserId, projectId, open, onActorSessionChange
 
     setBusy(true);
     setErrorMessage('');
+    setSuccessMessage('');
     try {
       const response = await loginActorSession(projectId, {
         username: username.trim(),
@@ -966,6 +972,7 @@ function IdentityTokenPanel({ actorUserId, projectId, open, onActorSessionChange
     }
     setBusy(true);
     setErrorMessage('');
+    setSuccessMessage('');
     try {
       if (status?.userId) {
         await logoutActorSession(projectId, status.userId);
@@ -973,6 +980,9 @@ function IdentityTokenPanel({ actorUserId, projectId, open, onActorSessionChange
       clearStoredActorToken();
       setStatus(null);
       setPassword('');
+      setOldPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
       setSessions([]);
     } catch {
       setErrorMessage('退出登录失败');
@@ -993,6 +1003,7 @@ function IdentityTokenPanel({ actorUserId, projectId, open, onActorSessionChange
     }
     setBusy(true);
     setErrorMessage('');
+    setSuccessMessage('');
     try {
       const renewed = await renewActorSession(projectId, status.userId);
       const expiresAt = new Date(Date.now() + renewed.timeoutSeconds * 1000).toISOString();
@@ -1019,6 +1030,7 @@ function IdentityTokenPanel({ actorUserId, projectId, open, onActorSessionChange
     }
     setBusy(true);
     setErrorMessage('');
+    setSuccessMessage('');
     try {
       await kickoutActorSessions(projectId, targetUserId, actorUserId);
       if (status?.userId === targetUserId) {
@@ -1030,6 +1042,42 @@ function IdentityTokenPanel({ actorUserId, projectId, open, onActorSessionChange
       }
     } catch {
       setErrorMessage('踢下线失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleChangePassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (busy || !status?.userId) {
+      return;
+    }
+    if (!oldPassword.trim() || !newPassword.trim()) {
+      setErrorMessage('请输入当前密码和新密码');
+      setSuccessMessage('');
+      return;
+    }
+    if (newPassword.trim() !== confirmPassword.trim()) {
+      setErrorMessage('两次新密码不一致');
+      setSuccessMessage('');
+      return;
+    }
+
+    setBusy(true);
+    setErrorMessage('');
+    setSuccessMessage('');
+    try {
+      await changeActorPassword(projectId, {
+        oldPassword: oldPassword.trim(),
+        newPassword: newPassword.trim(),
+      }, status.userId);
+      setOldPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setSuccessMessage('密码已更新');
+      await refreshSessions(status.userId, status.userId);
+    } catch {
+      setErrorMessage('修改密码失败，请检查当前密码');
     } finally {
       setBusy(false);
     }
@@ -1065,6 +1113,7 @@ function IdentityTokenPanel({ actorUserId, projectId, open, onActorSessionChange
       </form>
 
       {errorMessage ? <p className="inline-error">{errorMessage}</p> : null}
+      {successMessage ? <p className="inline-success">{successMessage}</p> : null}
       {loading ? <p className="empty-state">正在加载项目成员</p> : null}
       <div className="identity-token-status">
         <strong>当前登录态</strong>
@@ -1073,6 +1122,44 @@ function IdentityTokenPanel({ actorUserId, projectId, open, onActorSessionChange
           退出登录
         </button>
       </div>
+      <form className="identity-token-form identity-password-form" onSubmit={handleChangePassword}>
+        <label className="compact-field">
+          <span>当前密码</span>
+          <input
+            aria-label="当前密码"
+            autoComplete="current-password"
+            disabled={!status}
+            type="password"
+            value={oldPassword}
+            onChange={(event) => setOldPassword(event.target.value)}
+          />
+        </label>
+        <label className="compact-field">
+          <span>新密码</span>
+          <input
+            aria-label="新密码"
+            autoComplete="new-password"
+            disabled={!status}
+            type="password"
+            value={newPassword}
+            onChange={(event) => setNewPassword(event.target.value)}
+          />
+        </label>
+        <label className="compact-field">
+          <span>确认新密码</span>
+          <input
+            aria-label="确认新密码"
+            autoComplete="new-password"
+            disabled={!status}
+            type="password"
+            value={confirmPassword}
+            onChange={(event) => setConfirmPassword(event.target.value)}
+          />
+        </label>
+        <button className="secondary-button identity-token-form__submit" disabled={busy || !status} type="submit">
+          修改密码
+        </button>
+      </form>
       <div className="identity-session-panel">
         <div className="identity-session-panel__header">
           <strong>会话治理</strong>

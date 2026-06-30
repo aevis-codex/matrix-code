@@ -14,7 +14,7 @@ import java.time.Instant;
 @TableName("matrixcode_runtime_notifications")
 public class RuntimeNotificationEntity {
 
-    @TableId(value = "id", type = IdType.INPUT)
+    @TableId(value = "id", type = IdType.ASSIGN_ID)
     private String id;
     private String projectId;
     @TableField(value = "user_id", insertStrategy = FieldStrategy.ALWAYS, updateStrategy = FieldStrategy.ALWAYS)

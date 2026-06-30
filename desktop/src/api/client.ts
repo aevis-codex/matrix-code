@@ -104,6 +104,10 @@ export type ActorPasswordLoginInput = {
   username: string;
   password: string;
 };
+export type ActorPasswordChangeInput = {
+  oldPassword: string;
+  newPassword: string;
+};
 export type ActorTokenIssueResponse = {
   userId: string;
   token: string;
@@ -1360,6 +1364,23 @@ export function loginActorSession(
   return requestJson<ActorTokenIssueResponse>(projectUrl(serverUrl, projectId, '/identity/auth/login'), {
     method: 'POST',
     body: JSON.stringify({ username: input.username, password: input.password })
+  });
+}
+
+/**
+ * 修改当前登录用户的密码。
+ * 作用域：当前 Sa-Token 登录用户本人；场景：配置中心身份页完成账号安全维护。
+ */
+export async function changeActorPassword(
+  projectId: string,
+  input: ActorPasswordChangeInput,
+  userId: string,
+  serverUrl = matrixCodeServerUrl()
+): Promise<void> {
+  await requestOptionalJson<unknown>(projectUrl(serverUrl, projectId, '/identity/auth/password'), {
+    method: 'POST',
+    body: JSON.stringify({ oldPassword: input.oldPassword, newPassword: input.newPassword }),
+    headers: actorHeaders(userId)
   });
 }
 

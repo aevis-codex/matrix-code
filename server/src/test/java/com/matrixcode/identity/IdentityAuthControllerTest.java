@@ -79,6 +79,68 @@ class IdentityAuthControllerTest {
     }
 
     @Test
+    void 登录用户可以修改自己的数据库密码() throws Exception {
+        var fixture = fixture();
+        fixture.repository.saveLoginUser("user-dev", "user-dev", "old-secret", false);
+        fixture.repository.ensureMember(member("demo", "user-dev", "DEVELOPER"));
+
+        fixture.mockMvc.perform(post("/api/projects/demo/identity/auth/password")
+                        .header(RequestActorResolver.CURRENT_USER_HEADER, "user-dev")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"oldPassword":"old-secret","newPassword":"new-secret"}
+                                """))
+                .andExpect(status().isNoContent());
+
+        assertThat(fixture.repository.userCredentialById("user-dev"))
+                .get()
+                .satisfies(credential -> {
+                    assertThat(credential.passwordHash()).doesNotContain("new-secret");
+                    assertThat(credential.passwordUpdatedAt()).isEqualTo(FIXED_CLOCK.instant());
+                });
+        assertThat(fixture.sessionTerminator.lastRenewTtl).isEqualTo(Duration.ofSeconds(600));
+        assertThat(fixture.repository.auditRecords).extracting(UserAuditRecord::actionKey)
+                .containsExactly("IDENTITY_PASSWORD_CHANGED");
+
+        fixture.mockMvc.perform(post("/api/projects/demo/identity/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"username":"user-dev","password":"old-secret"}
+                                """))
+                .andExpect(status().isUnauthorized());
+
+        fixture.mockMvc.perform(post("/api/projects/demo/identity/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"username":"user-dev","password":"new-secret"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.userId").value("user-dev"));
+    }
+
+    @Test
+    void 原密码错误不能修改数据库密码() throws Exception {
+        var fixture = fixture();
+        fixture.repository.saveLoginUser("user-dev", "user-dev", "old-secret", false);
+        fixture.repository.ensureMember(member("demo", "user-dev", "DEVELOPER"));
+
+        fixture.mockMvc.perform(post("/api/projects/demo/identity/auth/password")
+                        .header(RequestActorResolver.CURRENT_USER_HEADER, "user-dev")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"oldPassword":"bad-secret","newPassword":"new-secret"}
+                                """))
+                .andExpect(status().isUnauthorized());
+
+        fixture.mockMvc.perform(post("/api/projects/demo/identity/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"username":"user-dev","password":"old-secret"}
+                                """))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void 错误密码不能登录() throws Exception {
         var fixture = fixture();
         fixture.repository.saveLoginUser("user-dev", "user-dev", "secret", false);

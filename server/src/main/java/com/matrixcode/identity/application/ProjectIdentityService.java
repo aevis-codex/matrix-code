@@ -135,6 +135,45 @@ public class ProjectIdentityService {
     }
 
     /**
+     * 修改当前用户的登录密码。
+     *
+     * <p>作用域：用户本人；场景：登录后的账号安全维护。方法只保存新密码的派生哈希，
+     * 原密码错误、用户不存在或用户被禁用时统一返回 {@code false}，避免向调用方暴露账号状态。</p>
+     */
+    public boolean changePassword(String userId, String oldPassword, String newPassword) {
+        if (repository == null) {
+            return false;
+        }
+        var normalizedUserId = requireText(userId, "用户 ID 不能为空");
+        requireText(oldPassword, "当前密码不能为空");
+        requireText(newPassword, "新密码不能为空");
+        var credential = repository.userCredentialById(normalizedUserId)
+                .filter(stored -> activeStatus(stored.user().status()))
+                .filter(stored -> passwordHashingService.matches(oldPassword, stored.passwordHash()))
+                .orElse(null);
+        if (credential == null) {
+            return false;
+        }
+        var user = credential.user();
+        var now = clock.instant();
+        repository.saveUserCredential(new ProjectIdentityRepository.StoredUserCredential(
+                new MatrixUser(
+                        user.id(),
+                        user.username(),
+                        user.displayName(),
+                        user.email(),
+                        user.status(),
+                        user.createdAt(),
+                        now
+                ),
+                passwordHashingService.hash(newPassword),
+                credential.superAdmin(),
+                now
+        ));
+        return true;
+    }
+
+    /**
      * 判断用户是否为全局超级管理员。
      *
      * <p>超级管理员用于系统级用户和权限治理，可以跨项目通过项目成员与管理权限守卫。</p>

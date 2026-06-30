@@ -15,7 +15,7 @@ import java.util.List;
 @TableName("matrixcode_model_requests")
 public class ModelRequestEntity {
 
-    @TableId(value = "id", type = IdType.INPUT)
+    @TableId(value = "id", type = IdType.ASSIGN_ID)
     private String id;
     private String projectId;
     private String roleKey;

@@ -11,7 +11,7 @@ import java.util.UUID;
 @TableName("matrixcode_runtime_notification_reads")
 public class RuntimeNotificationReadEntity {
 
-    @TableId(value = "id", type = IdType.INPUT)
+    @TableId(value = "id", type = IdType.ASSIGN_ID)
     private String id;
     private String projectId;
     private String notificationId;

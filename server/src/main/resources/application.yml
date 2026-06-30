@@ -9,6 +9,9 @@ spring:
       timeout: ${MATRIXCODE_REDIS_TIMEOUT:5s}
 
 mybatis-plus:
+  global-config:
+    db-config:
+      id-type: assign_id
   configuration:
     map-underscore-to-camel-case: true
 

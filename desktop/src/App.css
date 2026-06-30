@@ -2084,6 +2084,10 @@ button:disabled {
   white-space: nowrap;
 }
 
+.identity-password-form {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+}
+
 .identity-token-status {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -2941,7 +2945,8 @@ button:disabled {
 }
 
 .form-hint,
-.inline-error {
+.inline-error,
+.inline-success {
   margin: 0;
   font-size: 13px;
   line-height: 1.5;
@@ -2953,6 +2958,10 @@ button:disabled {
 
 .inline-error {
   color: #ffb29a;
+}
+
+.inline-success {
+  color: #7ddf9b;
 }
 
 .role-panel__error {

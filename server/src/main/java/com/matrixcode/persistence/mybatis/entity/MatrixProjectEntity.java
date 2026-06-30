@@ -11,7 +11,7 @@ import java.time.Instant;
 @TableName("matrixcode_projects")
 public class MatrixProjectEntity {
 
-    @TableId(value = "id", type = IdType.INPUT)
+    @TableId(value = "id", type = IdType.ASSIGN_ID)
     private String id;
     private String name;
     @TableField(value = "description", insertStrategy = FieldStrategy.ALWAYS, updateStrategy = FieldStrategy.ALWAYS)

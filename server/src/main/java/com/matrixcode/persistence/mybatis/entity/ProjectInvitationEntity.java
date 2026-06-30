@@ -13,7 +13,7 @@ import java.time.Instant;
 @TableName("matrixcode_project_invitations")
 public class ProjectInvitationEntity {
 
-    @TableId(value = "id", type = IdType.INPUT)
+    @TableId(value = "id", type = IdType.ASSIGN_ID)
     private String id;
     private String projectId;
     private String inviteeUserId;

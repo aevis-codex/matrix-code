@@ -12,7 +12,7 @@ import java.time.Instant;
 @TableName("matrixcode_agent_run_events")
 public class AgentRunEventEntity {
 
-    @TableId(value = "id", type = IdType.INPUT)
+    @TableId(value = "id", type = IdType.ASSIGN_ID)
     private String id;
     private String runId;
     private String projectId;

@@ -24,6 +24,7 @@ import {
   batchUpdateProjectMembers,
   cancelLocalExecutionTask,
   captureComposeLogs,
+  changeActorPassword,
   claimAgentRun,
   claimNextAgentRun,
   configureComposeEnvironment,
@@ -87,6 +88,7 @@ vi.mock('../api/client', () => ({
   createProjectUser: vi.fn(),
   updateProjectMember: vi.fn(),
   batchUpdateProjectMembers: vi.fn(),
+  changeActorPassword: vi.fn(),
   loadProjectMembers: vi.fn(),
   loadProjectInvitations: vi.fn(),
   revokeProjectInvitation: vi.fn(),
@@ -794,6 +796,7 @@ const 添加项目成员 = vi.mocked(addProjectMember);
 const 创建项目用户 = vi.mocked(createProjectUser);
 const 更新项目成员 = vi.mocked(updateProjectMember);
 const 批量更新项目成员 = vi.mocked(batchUpdateProjectMembers);
+const 修改身份密码 = vi.mocked(changeActorPassword);
 const 加载项目成员 = vi.mocked(loadProjectMembers);
 const 加载项目邀请 = vi.mocked(loadProjectInvitations);
 const 撤销项目邀请 = vi.mocked(revokeProjectInvitation);
@@ -1144,6 +1147,7 @@ describe('MatrixCode 桌面工作台', () => {
       }
     ]);
     踢下线身份会话.mockResolvedValue(undefined);
+    修改身份密码.mockResolvedValue(undefined);
     记录编码智能体交付回溯.mockResolvedValue(编码智能体交付回溯文档);
     重试Agent运行.mockResolvedValue({
       ...Agent运行记录[0],
@@ -2192,6 +2196,33 @@ describe('MatrixCode 桌面工作台', () => {
     expect(window.localStorage.getItem('matrixcode.actorToken')).toBeNull();
     expect(window.localStorage.getItem('matrixcode.actorTokenUserId')).toBeNull();
     expect(window.localStorage.getItem('matrixcode.actorTokenExpiresAt')).toBeNull();
+  });
+
+  it('登录后可以在配置中心修改当前用户密码', async () => {
+    window.localStorage.setItem('matrixcode.actorToken', 'sa-token');
+    window.localStorage.setItem('matrixcode.actorTokenUserId', 'user-dev');
+    window.localStorage.setItem('matrixcode.actorTokenExpiresAt', '2026-06-27T06:00:00Z');
+
+    render(<App />);
+
+    expect(await screen.findByText('支付系统重构')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '配置' }));
+
+    const 配置区 = within(await screen.findByRole('dialog', { name: '项目配置' }));
+    fireEvent.click(配置区.getByRole('tab', { name: '身份' }));
+
+    fireEvent.change(await 配置区.findByLabelText('当前密码'), { target: { value: 'old-secret' } });
+    fireEvent.change(配置区.getByLabelText('新密码'), { target: { value: 'new-secret' } });
+    fireEvent.change(配置区.getByLabelText('确认新密码'), { target: { value: 'new-secret' } });
+    fireEvent.click(配置区.getByRole('button', { name: '修改密码' }));
+
+    await waitFor(() => {
+      expect(修改身份密码).toHaveBeenCalledWith('demo', {
+        oldPassword: 'old-secret',
+        newPassword: 'new-secret'
+      }, 'user-dev');
+    });
+    expect(await 配置区.findByText('密码已更新')).toBeTruthy();
   });
 
   it('配置中心登录 admin 后会切换成员页为创建用户模式', async () => {

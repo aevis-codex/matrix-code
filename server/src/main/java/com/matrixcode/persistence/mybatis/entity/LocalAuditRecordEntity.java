@@ -15,7 +15,7 @@ public class LocalAuditRecordEntity {
 
     public static final String TARGET_TYPE = "LOCAL_EXECUTION_TASK";
 
-    @TableId(value = "id", type = IdType.INPUT)
+    @TableId(value = "id", type = IdType.ASSIGN_ID)
     private String id;
     private String projectId;
     private String actorUserId;

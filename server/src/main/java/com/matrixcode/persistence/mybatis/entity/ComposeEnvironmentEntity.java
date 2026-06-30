@@ -11,7 +11,7 @@ import java.time.Instant;
 @TableName("matrixcode_compose_environments")
 public class ComposeEnvironmentEntity {
 
-    @TableId(value = "id", type = IdType.INPUT)
+    @TableId(value = "id", type = IdType.ASSIGN_ID)
     private String id;
     private String projectId;
     private String targetId;

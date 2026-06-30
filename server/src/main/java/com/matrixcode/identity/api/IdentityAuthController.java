@@ -99,6 +99,33 @@ public class IdentityAuthController {
     }
 
     /**
+     * 修改当前登录用户的密码。
+     *
+     * <p>接口只允许当前 Sa-Token 解析出的用户修改自己的密码；服务端校验项目成员状态和旧密码，
+     * 然后把新密码派生哈希写回数据库，成功后顺带续期当前会话。</p>
+     */
+    @PostMapping("/password")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void changePassword(
+            @PathVariable String projectId,
+            @RequestBody ActorPasswordChangeRequest command,
+            HttpServletRequest request
+    ) {
+        if (command == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请求内容格式不正确");
+        }
+        var currentUserId = actorResolver.resolve(request);
+        permissionGuard.assertProjectMember(projectId, currentUserId);
+        var oldPassword = requireText(command.oldPassword(), "当前密码不能为空");
+        var newPassword = requireText(command.newPassword(), "新密码不能为空");
+        if (!identityService.changePassword(currentUserId, oldPassword, newPassword)) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "当前密码不正确");
+        }
+        sessionTerminator.renewCurrent(authProperties.defaultTokenTtl());
+        recordAudit(projectId, currentUserId, "IDENTITY_PASSWORD_CHANGED", currentUserId, "修改当前用户密码");
+    }
+
+    /**
      * 退出当前 Sa-Token 会话。
      */
     @PostMapping("/logout")
@@ -260,6 +287,12 @@ public class IdentityAuthController {
      * 用户名密码登录请求体。
      */
     public record ActorPasswordLoginRequest(String username, String password) {
+    }
+
+    /**
+     * 当前用户修改密码请求体。
+     */
+    public record ActorPasswordChangeRequest(String oldPassword, String newPassword) {
     }
 
     /**

@@ -12,7 +12,7 @@ import java.time.Instant;
 @TableName("matrixcode_workflow_items")
 public class WorkflowItemEntity {
 
-    @TableId(value = "id", type = IdType.INPUT)
+    @TableId(value = "id", type = IdType.ASSIGN_ID)
     private String id;
     private String projectId;
     private String title;

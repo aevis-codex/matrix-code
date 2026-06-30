@@ -13,7 +13,7 @@ import java.time.Instant;
 @TableName("matrixcode_role_model_bindings")
 public class RoleModelBindingEntity {
 
-    @TableId(value = "id", type = IdType.INPUT)
+    @TableId(value = "id", type = IdType.ASSIGN_ID)
     private String id;
     private String projectId;
     private String roleKey;
