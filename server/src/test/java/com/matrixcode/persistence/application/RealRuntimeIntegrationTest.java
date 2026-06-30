@@ -92,9 +92,12 @@ class RealRuntimeIntegrationTest {
                          'matrixcode_agent_run_events'
                      )
                      """);
-             var resultSet = statement.executeQuery()) {
+            var resultSet = statement.executeQuery()) {
             resultSet.next();
             assertThat(resultSet.getInt(1)).isEqualTo(11);
+            assertThat(nonIdPrimaryKeyTableCount(connection))
+                    .as("真实 MySQL 所有 matrixcode_% 正式表必须使用 id 作为唯一主键")
+                    .isZero();
         }
 
         var progressRepository = new JdbcWorkbenchProgressRepository(properties(jdbcUrl, username, password));
@@ -667,6 +670,36 @@ class RealRuntimeIntegrationTest {
                 resultSet.next();
                 return resultSet.getInt(1);
             }
+        }
+    }
+
+    /**
+     * 统计真实 MySQL 中仍未使用单列 {@code id} 主键的 MatrixCode 正式业务表数量。
+     *
+     * <p>该断言用于防止后续 Flyway 迁移或历史表回退到业务字段主键；只读取
+     * {@code information_schema}，不触碰业务数据和密钥。</p>
+     */
+    private static int nonIdPrimaryKeyTableCount(java.sql.Connection connection) throws Exception {
+        try (var statement = connection.prepareStatement("""
+                select count(*)
+                from (
+                    select tc.table_name,
+                           group_concat(lower(kcu.column_name) order by kcu.ordinal_position separator ',') pk_columns
+                    from information_schema.table_constraints tc
+                    join information_schema.key_column_usage kcu
+                      on tc.constraint_schema = kcu.constraint_schema
+                     and tc.constraint_name = kcu.constraint_name
+                     and tc.table_name = kcu.table_name
+                    where tc.constraint_schema = database()
+                      and tc.constraint_type = 'PRIMARY KEY'
+                      and lower(tc.table_name) like 'matrixcode\\_%'
+                    group by tc.table_name
+                    having pk_columns <> 'id'
+                ) non_id_pk_tables
+                """);
+             var resultSet = statement.executeQuery()) {
+            resultSet.next();
+            return resultSet.getInt(1);
         }
     }
 

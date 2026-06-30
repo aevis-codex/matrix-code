@@ -11,7 +11,8 @@ import java.util.List;
 @TableName("matrixcode_local_git_diff_summaries")
 public class LocalGitDiffSummaryEntity {
 
-    @TableId(value = "project_id", type = IdType.INPUT)
+    @TableId(value = "id", type = IdType.ASSIGN_ID)
+    private String id;
     private String projectId;
     private String workspaceId;
     private Boolean repository;
@@ -49,6 +50,14 @@ public class LocalGitDiffSummaryEntity {
                 diffStat == null ? "" : diffStat,
                 capturedAt == null ? Instant.EPOCH : capturedAt
         );
+    }
+
+    public String getId() {
+        return id;
+    }
+
+    public void setId(String id) {
+        this.id = id;
     }
 
     public String getProjectId() {

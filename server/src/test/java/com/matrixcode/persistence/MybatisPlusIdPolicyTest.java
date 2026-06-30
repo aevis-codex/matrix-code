@@ -5,7 +5,6 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -28,7 +27,7 @@ class MybatisPlusIdPolicyTest {
     }
 
     @Test
-    void 记录仍需独立迁移的业务投影主键() throws IOException {
+    void 不再允许项目投影表使用projectId作为MyBatisPlus主键() throws IOException {
         var entityDir = sourcePath("src/main/java/com/matrixcode/persistence/mybatis/entity");
         var projectKeyEntities = Files.list(entityDir)
                 .filter(path -> path.getFileName().toString().endsWith(".java"))
@@ -38,8 +37,8 @@ class MybatisPlusIdPolicyTest {
                 .toList();
 
         assertThat(projectKeyEntities)
-                .as("这两个表是按项目覆盖的投影表，改为雪花 id 需要独立 Flyway 数据迁移")
-                .isEqualTo(List.of("AcceptanceStateEntity.java", "LocalGitDiffSummaryEntity.java"));
+                .as("所有 MyBatis-Plus 实体都必须使用独立 id 主键；项目级覆盖语义通过 project_id 唯一约束实现")
+                .isEmpty();
     }
 
     private Path sourcePath(String relativePath) {

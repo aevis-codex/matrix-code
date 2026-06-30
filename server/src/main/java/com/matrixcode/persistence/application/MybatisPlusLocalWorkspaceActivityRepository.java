@@ -1,6 +1,7 @@
 package com.matrixcode.persistence.application;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -105,7 +106,7 @@ public class MybatisPlusLocalWorkspaceActivityRepository implements LocalWorkspa
     /**
      * 覆盖保存每个项目最近一次 Git Diff 摘要。
      *
-     * <p>Git Diff 摘要是“每项目一条”的最新状态，使用 `project_id` 主键做幂等覆盖。</p>
+     * <p>Git Diff 摘要是“每项目一条”的最新状态，使用 `project_id` 唯一键做幂等覆盖。</p>
      */
     @Override
     @Transactional
@@ -121,7 +122,8 @@ public class MybatisPlusLocalWorkspaceActivityRepository implements LocalWorkspa
                     changedFilesJson(entry.getValue().changedFiles()),
                     now
             );
-            if (gitDiffSummaryMapper.updateById(entity) == 0) {
+            if (gitDiffSummaryMapper.update(entity, new LambdaUpdateWrapper<LocalGitDiffSummaryEntity>()
+                    .eq(LocalGitDiffSummaryEntity::getProjectId, entry.getKey())) == 0) {
                 gitDiffSummaryMapper.insert(entity);
             }
         }

@@ -10,7 +10,8 @@ import java.time.Instant;
 @TableName("matrixcode_acceptance_states")
 public class AcceptanceStateEntity {
 
-    @TableId(value = "project_id", type = IdType.INPUT)
+    @TableId(value = "id", type = IdType.ASSIGN_ID)
+    private String id;
     private String projectId;
     private String documentId;
     private Boolean accepted;
@@ -20,7 +21,7 @@ public class AcceptanceStateEntity {
     /**
      * 构造验收投影实体。
      *
-     * <p>验收投影以项目为唯一主键，保存时覆盖最新文档、是否验收和退回角色，
+     * <p>验收投影以项目为唯一业务键，保存时覆盖最新文档、是否验收和退回角色，
      * 与旧 JDBC 仓储的 upsert 行为保持一致。</p>
      */
     public static AcceptanceStateEntity fromDomain(
@@ -39,6 +40,14 @@ public class AcceptanceStateEntity {
 
     public WorkbenchStateSnapshot.AcceptanceState toDomain() {
         return new WorkbenchStateSnapshot.AcceptanceState(documentId, Boolean.TRUE.equals(accepted), returnToRole);
+    }
+
+    public String getId() {
+        return id;
+    }
+
+    public void setId(String id) {
+        this.id = id;
     }
 
     public String getProjectId() {

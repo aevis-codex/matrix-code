@@ -77,6 +77,9 @@ class MybatisPlusWorkbenchProgressRepositoryTest {
             assertThat(tableCount(dataSource, "matrixcode_workflow_items")).isEqualTo(2);
             assertThat(tableCount(dataSource, "matrixcode_workflow_events")).isEqualTo(1);
             assertThat(tableCount(dataSource, "matrixcode_acceptance_states")).isEqualTo(1);
+            assertThat(idForProject(dataSource, "matrixcode_acceptance_states", "demo"))
+                    .isNotBlank()
+                    .isNotEqualTo("demo");
         }
     }
 
@@ -140,6 +143,17 @@ class MybatisPlusWorkbenchProgressRepositoryTest {
              var resultSet = statement.executeQuery()) {
             resultSet.next();
             return resultSet.getInt(1);
+        }
+    }
+
+    private String idForProject(DataSource dataSource, String tableName, String projectId) throws SQLException {
+        try (var connection = dataSource.getConnection();
+             var statement = connection.prepareStatement("select id from " + tableName + " where project_id = ?")) {
+            statement.setString(1, projectId);
+            try (var resultSet = statement.executeQuery()) {
+                assertThat(resultSet.next()).as(tableName + " project row").isTrue();
+                return resultSet.getString(1);
+            }
         }
     }
 }

@@ -1,5 +1,6 @@
 package com.matrixcode.persistence.application;
 
+import com.baomidou.mybatisplus.core.incrementer.DefaultIdentifierGenerator;
 import com.matrixcode.workbench.application.WorkbenchProgressRepository;
 import com.matrixcode.workbench.application.WorkbenchStateSnapshot;
 import com.matrixcode.workflow.domain.WorkflowEvent;
@@ -18,6 +19,8 @@ import java.util.Map;
 import java.util.Objects;
 
 public class JdbcWorkbenchProgressRepository implements WorkbenchProgressRepository {
+
+    private static final DefaultIdentifierGenerator ID_GENERATOR = DefaultIdentifierGenerator.getInstance();
 
     private final PersistenceModeProperties properties;
     private final DatabaseMigrationService migrationService;
@@ -264,13 +267,14 @@ public class JdbcWorkbenchProgressRepository implements WorkbenchProgressReposit
         }
         try (var statement = connection.prepareStatement("""
                 insert into matrixcode_acceptance_states
-                    (project_id, document_id, accepted, return_to_role, updated_at)
-                values (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    (id, project_id, document_id, accepted, return_to_role, updated_at)
+                values (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 """)) {
-            statement.setString(1, projectId);
-            statement.setString(2, acceptance.documentId());
-            statement.setBoolean(3, acceptance.accepted());
-            statement.setString(4, acceptance.returnToRole());
+            statement.setString(1, String.valueOf(ID_GENERATOR.nextId(null)));
+            statement.setString(2, projectId);
+            statement.setString(3, acceptance.documentId());
+            statement.setBoolean(4, acceptance.accepted());
+            statement.setString(5, acceptance.returnToRole());
             statement.executeUpdate();
         }
     }

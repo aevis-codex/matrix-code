@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -88,6 +89,15 @@ class DatabaseMigrationServiceTest {
                     .isEqualTo("事件结构化内容的 JSON 文本，保存工具输入输出摘要、错误体摘要或阶段结果。");
             assertThat(datetimePrecision(connection, "matrixcode_agent_run_events", "occurred_at"))
                     .isEqualTo(6);
+            assertThat(primaryKeyColumns(connection, "matrixcode_acceptance_states"))
+                    .containsExactly("id");
+            assertThat(primaryKeyColumns(connection, "matrixcode_local_git_diff_summaries"))
+                    .containsExactly("id");
+            assertAllMatrixCodeTablesUseIdPrimaryKey(connection);
+            assertThat(columnComment(connection, "matrixcode_acceptance_states", "id"))
+                    .isEqualTo("验收投影记录 ID，由 MyBatis-Plus 雪花算法生成，用于表级主键。");
+            assertThat(columnComment(connection, "matrixcode_local_git_diff_summaries", "id"))
+                    .isEqualTo("Git Diff 摘要记录 ID，由 MyBatis-Plus 雪花算法生成，用于表级主键。");
             assertAllMatrixCodeTablesAndColumnsHaveComments(connection);
         }
     }
@@ -150,6 +160,28 @@ class DatabaseMigrationServiceTest {
         }
     }
 
+    private List<String> primaryKeyColumns(Connection connection, String tableName) throws SQLException {
+        var columns = new ArrayList<String>();
+        try (var statement = connection.prepareStatement("""
+                select lower(kcu.column_name)
+                from information_schema.table_constraints tc
+                join information_schema.key_column_usage kcu
+                    on tc.constraint_name = kcu.constraint_name
+                    and tc.table_schema = kcu.table_schema
+                    and tc.table_name = kcu.table_name
+                where lower(tc.table_name) = ? and tc.constraint_type = 'PRIMARY KEY'
+                order by kcu.ordinal_position
+                """)) {
+            statement.setString(1, tableName);
+            try (var resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    columns.add(resultSet.getString(1));
+                }
+            }
+        }
+        return columns;
+    }
+
     private void assertAllMatrixCodeTablesAndColumnsHaveComments(Connection connection) throws SQLException {
         try (var statement = connection.prepareStatement("""
                 select lower(table_name), remarks
@@ -174,6 +206,23 @@ class DatabaseMigrationServiceTest {
                 assertThat(resultSet.getString(3))
                         .as(resultSet.getString(1) + "." + resultSet.getString(2) + " 字段必须有注释")
                         .isNotBlank();
+            }
+        }
+    }
+
+    private void assertAllMatrixCodeTablesUseIdPrimaryKey(Connection connection) throws SQLException {
+        try (var statement = connection.prepareStatement("""
+                select lower(table_name)
+                from information_schema.tables
+                where lower(table_name) like 'matrixcode_%'
+                order by lower(table_name)
+                """);
+             var resultSet = statement.executeQuery()) {
+            while (resultSet.next()) {
+                var tableName = resultSet.getString(1);
+                assertThat(primaryKeyColumns(connection, tableName))
+                        .as(tableName + " 必须使用 id 作为唯一主键")
+                        .containsExactly("id");
             }
         }
     }

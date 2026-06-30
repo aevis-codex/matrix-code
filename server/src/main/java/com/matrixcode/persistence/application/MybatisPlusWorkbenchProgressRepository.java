@@ -122,7 +122,8 @@ public class MybatisPlusWorkbenchProgressRepository implements WorkbenchProgress
         acceptances.forEach((projectId, acceptance) -> {
             ensureProject(projectId, "验收");
             var entity = AcceptanceStateEntity.fromDomain(projectId, Objects.requireNonNull(acceptance, "acceptance 不能为空"), Instant.now());
-            if (acceptanceMapper.updateById(entity) == 0) {
+            if (acceptanceMapper.update(entity, new LambdaUpdateWrapper<AcceptanceStateEntity>()
+                    .eq(AcceptanceStateEntity::getProjectId, projectId)) == 0) {
                 acceptanceMapper.insert(entity);
             }
         });

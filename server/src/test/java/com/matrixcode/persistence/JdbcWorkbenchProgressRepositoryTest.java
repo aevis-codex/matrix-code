@@ -37,6 +37,9 @@ class JdbcWorkbenchProgressRepositoryTest {
         assertThat(repository.loadWorkflowEvents().get("workflow-1")).containsExactly(event);
         assertThat(repository.loadAcceptances().get("demo")).isEqualTo(acceptance);
         assertThat(projectCount(jdbcUrl)).isEqualTo(1);
+        assertThat(acceptanceId(jdbcUrl, "demo"))
+                .isNotBlank()
+                .isNotEqualTo("demo");
     }
 
     private void migrate(String jdbcUrl) {
@@ -62,6 +65,17 @@ class JdbcWorkbenchProgressRepositoryTest {
              var resultSet = statement.executeQuery()) {
             resultSet.next();
             return resultSet.getInt(1);
+        }
+    }
+
+    private String acceptanceId(String jdbcUrl, String projectId) throws Exception {
+        try (var connection = DriverManager.getConnection(jdbcUrl, "sa", "");
+             var statement = connection.prepareStatement("select id from matrixcode_acceptance_states where project_id = ?")) {
+            statement.setString(1, projectId);
+            try (var resultSet = statement.executeQuery()) {
+                resultSet.next();
+                return resultSet.getString("id");
+            }
         }
     }
 

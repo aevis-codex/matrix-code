@@ -1,21 +1,28 @@
 package com.matrixcode.persistence.application;
 
+import com.baomidou.mybatisplus.core.incrementer.DefaultIdentifierGenerator;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.TreeMap;
 
 @Component
 @ConditionalOnProperty(prefix = "matrixcode.persistence", name = "mode", havingValue = "jdbc")
 public class JdbcSnapshotRepository {
 
     private static final String TABLE_COMMENT = "保存工作台 JSON 快照过渡数据，用于在领域表迁移期间保留尚未迁出的状态切片。";
+    private static final String ID_COMMENT = "快照记录 ID，由 MyBatis-Plus 雪花算法生成，用于表级主键。";
+    private static final DefaultIdentifierGenerator ID_GENERATOR = DefaultIdentifierGenerator.getInstance();
 
     private static final Map<String, String> COLUMN_COMMENTS = orderedMap(
+            "id", ID_COMMENT,
             "slice_key", "快照切片键，例如 workbench-state，用于区分不同状态投影。",
             "version", "快照结构版本号，用于读取时做兼容判断和迁移。",
             "payload", "快照 JSON 正文，保存该切片的完整序列化状态。",
@@ -74,25 +81,163 @@ public class JdbcSnapshotRepository {
 
     private void insert(Connection connection, String sliceKey, int version, String payload) throws SQLException {
         var sql = "insert into " + tableName()
-                + " (slice_key, version, payload, updated_at) values (?, ?, ?, CURRENT_TIMESTAMP)";
+                + " (id, slice_key, version, payload, updated_at) values (?, ?, ?, ?, CURRENT_TIMESTAMP)";
         try (var statement = connection.prepareStatement(sql)) {
-            statement.setString(1, sliceKey);
-            statement.setInt(2, version);
-            statement.setString(3, payload);
+            statement.setString(1, String.valueOf(ID_GENERATOR.nextId(null)));
+            statement.setString(2, sliceKey);
+            statement.setInt(3, version);
+            statement.setString(4, payload);
             statement.executeUpdate();
         }
     }
 
     private void ensureTable(Connection connection) throws SQLException {
         var sql = "create table if not exists " + tableName() + " ("
-                + "slice_key varchar(80) primary key, "
+                + "id varchar(64) primary key, "
+                + "slice_key varchar(80) not null, "
                 + "version integer not null, "
                 + "payload text not null, "
-                + "updated_at timestamp not null)";
+                + "updated_at timestamp not null, "
+                + "constraint " + snapshotSliceKeyConstraintName() + " unique (slice_key))";
         try (var statement = connection.createStatement()) {
             statement.execute(sql);
         }
+        ensureSnowflakePrimaryKeyShape(connection);
         applySchemaCommentsIfMissing(connection);
+    }
+
+    /**
+     * 将旧版按需快照表从 {@code slice_key} 主键迁移为独立 {@code id} 主键。
+     *
+     * <p>Flyway 会负责默认生产表；该兜底路径覆盖自定义快照表名和历史测试库，保持
+     * `slice_key` 唯一覆盖语义不变。</p>
+     */
+    private void ensureSnowflakePrimaryKeyShape(Connection connection) throws SQLException {
+        var databaseProduct = connection.getMetaData().getDatabaseProductName().toLowerCase();
+        addIdColumnIfMissing(connection, databaseProduct);
+        fillMissingIds(connection);
+        makeIdRequired(connection, databaseProduct);
+        if (!primaryKeyColumns(connection).equals(List.of("id"))) {
+            execute(connection, "alter table " + tableName() + " drop primary key");
+            execute(connection, "alter table " + tableName() + " add primary key (id)");
+        }
+        createUniqueSliceKeyIndexIfMissing(connection);
+    }
+
+    private void addIdColumnIfMissing(Connection connection, String databaseProduct) throws SQLException {
+        if (columnExists(connection, "id")) {
+            return;
+        }
+        if (databaseProduct.contains("mysql")) {
+            execute(connection, "alter table " + quoteIdentifier(tableName())
+                    + " add column id varchar(64) null comment '" + escapeSql(ID_COMMENT) + "'");
+            return;
+        }
+        execute(connection, "alter table " + tableName() + " add column id varchar(64) null");
+        execute(connection, "comment on column " + tableName() + ".id is '" + escapeSql(ID_COMMENT) + "'");
+    }
+
+    private void fillMissingIds(Connection connection) throws SQLException {
+        var sliceKeys = new ArrayList<String>();
+        try (var statement = connection.prepareStatement("""
+                select slice_key
+                from %s
+                where id is null or id = ''
+                """.formatted(tableName()));
+             var resultSet = statement.executeQuery()) {
+            while (resultSet.next()) {
+                sliceKeys.add(resultSet.getString(1));
+            }
+        }
+
+        try (var statement = connection.prepareStatement("""
+                update %s
+                set id = ?
+                where slice_key = ?
+                """.formatted(tableName()))) {
+            for (var sliceKey : sliceKeys) {
+                statement.setString(1, String.valueOf(ID_GENERATOR.nextId(null)));
+                statement.setString(2, sliceKey);
+                statement.addBatch();
+            }
+            statement.executeBatch();
+        }
+    }
+
+    private void makeIdRequired(Connection connection, String databaseProduct) throws SQLException {
+        if (databaseProduct.contains("mysql")) {
+            execute(connection, "alter table " + quoteIdentifier(tableName())
+                    + " modify column id varchar(64) not null comment '" + escapeSql(ID_COMMENT) + "'");
+            return;
+        }
+        execute(connection, "alter table " + tableName() + " alter column id set not null");
+    }
+
+    private void createUniqueSliceKeyIndexIfMissing(Connection connection) throws SQLException {
+        if (indexExists(connection, snapshotSliceKeyConstraintName())) {
+            return;
+        }
+        execute(connection, "create unique index " + snapshotSliceKeyConstraintName()
+                + " on " + tableName() + " (slice_key)");
+    }
+
+    private boolean columnExists(Connection connection, String columnName) throws SQLException {
+        try (var statement = connection.prepareStatement("""
+                select count(*)
+                from information_schema.columns
+                where lower(table_name) = ? and lower(column_name) = ?
+                """)) {
+            statement.setString(1, tableName().toLowerCase());
+            statement.setString(2, columnName.toLowerCase());
+            try (var resultSet = statement.executeQuery()) {
+                resultSet.next();
+                return resultSet.getInt(1) > 0;
+            }
+        }
+    }
+
+    private List<String> primaryKeyColumns(Connection connection) throws SQLException {
+        var columnsByPosition = new TreeMap<Short, String>();
+        readPrimaryKeyColumns(connection, tableName(), columnsByPosition);
+        if (columnsByPosition.isEmpty()) {
+            readPrimaryKeyColumns(connection, tableName().toUpperCase(), columnsByPosition);
+        }
+        if (columnsByPosition.isEmpty()) {
+            readPrimaryKeyColumns(connection, tableName().toLowerCase(), columnsByPosition);
+        }
+        return new ArrayList<>(columnsByPosition.values());
+    }
+
+    private void readPrimaryKeyColumns(
+            Connection connection,
+            String tableName,
+            TreeMap<Short, String> columnsByPosition
+    ) throws SQLException {
+        try (var resultSet = connection.getMetaData().getPrimaryKeys(null, null, tableName)) {
+            while (resultSet.next()) {
+                columnsByPosition.put(
+                        resultSet.getShort("KEY_SEQ"),
+                        resultSet.getString("COLUMN_NAME").toLowerCase()
+                );
+            }
+        }
+    }
+
+    private boolean indexExists(Connection connection, String indexName) throws SQLException {
+        try (var resultSet = connection.getMetaData().getIndexInfo(null, null, tableName(), false, false)) {
+            while (resultSet.next()) {
+                if (indexName.equalsIgnoreCase(resultSet.getString("INDEX_NAME"))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private void execute(Connection connection, String sql) throws SQLException {
+        try (var statement = connection.createStatement()) {
+            statement.execute(sql);
+        }
     }
 
     /**
@@ -250,6 +395,10 @@ public class JdbcSnapshotRepository {
 
     private String tableName() {
         return properties.validatedTableName();
+    }
+
+    private String snapshotSliceKeyConstraintName() {
+        return "uk_" + tableName() + "_slice_key";
     }
 
     private String normalizedTableName(String databaseProduct) {

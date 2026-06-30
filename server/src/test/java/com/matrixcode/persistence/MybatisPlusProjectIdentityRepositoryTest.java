@@ -1,6 +1,8 @@
 package com.matrixcode.persistence;
 
 import com.matrixcode.MatrixCodeServerApplication;
+import com.matrixcode.identity.application.PasswordHashingService;
+import com.matrixcode.identity.application.ProjectIdentityService;
 import com.matrixcode.identity.application.ProjectIdentityRepository;
 import com.matrixcode.identity.application.ProjectIdentityRepository.StoredProjectInvitation;
 import com.matrixcode.identity.application.ProjectIdentityRepository.StoredUserCredential;
@@ -170,6 +172,32 @@ class MybatisPlusProjectIdentityRepositoryTest {
     }
 
     @Test
+    void Jdbc模式下身份服务修改密码后只把密码哈希保存到数据库() throws Exception {
+        var jdbcUrl = jdbcUrl("identity_password_change_mp_");
+
+        try (var context = startJdbcContext(jdbcUrl)) {
+            var repository = context.getBean(ProjectIdentityRepository.class);
+            var passwordHashing = context.getBean(PasswordHashingService.class);
+            var identityService = context.getBean(ProjectIdentityService.class);
+            repository.saveUserCredential(new StoredUserCredential(
+                    new MatrixUser("user-dev", "user-dev", "开发同学", "", "ACTIVE", FIXED, FIXED),
+                    passwordHashing.hash("old-secret"),
+                    false,
+                    FIXED
+            ));
+
+            assertThat(identityService.changePassword("user-dev", "old-secret", "new-secret")).isTrue();
+
+            assertThat(identityService.authenticate("user-dev", "old-secret")).isEmpty();
+            assertThat(identityService.authenticate("user-dev", "new-secret")).isPresent();
+            assertThat(passwordHash(context.getBean(DataSource.class), "user-dev"))
+                    .startsWith("pbkdf2_sha256$")
+                    .doesNotContain("old-secret")
+                    .doesNotContain("new-secret");
+        }
+    }
+
+    @Test
     void 默认文件模式不创建数据源和项目身份仓储Bean() {
         try (var context = new SpringApplicationBuilder(MatrixCodeServerApplication.class)
                 .web(WebApplicationType.NONE)
@@ -278,6 +306,17 @@ class MybatisPlusProjectIdentityRepositoryTest {
             try (var resultSet = statement.executeQuery()) {
                 resultSet.next();
                 return resultSet.getInt(1);
+            }
+        }
+    }
+
+    private String passwordHash(DataSource dataSource, String userId) throws SQLException {
+        try (var connection = dataSource.getConnection();
+             var statement = connection.prepareStatement("select password_hash from matrixcode_users where id = ?")) {
+            statement.setString(1, userId);
+            try (var resultSet = statement.executeQuery()) {
+                resultSet.next();
+                return resultSet.getString("password_hash");
             }
         }
     }

@@ -55,6 +55,9 @@ class MybatisPlusLocalWorkspaceActivityRepositoryTest {
             var dataSource = context.getBean(DataSource.class);
             assertThat(tableCount(dataSource, "matrixcode_local_file_operations")).isEqualTo(1);
             assertThat(tableCount(dataSource, "matrixcode_local_git_diff_summaries")).isEqualTo(1);
+            assertThat(idForProject(dataSource, "matrixcode_local_git_diff_summaries", "demo"))
+                    .isNotBlank()
+                    .isNotEqualTo("demo");
             assertThat(workbenchSnapshotCount(dataSource)).isZero();
         }
 
@@ -110,6 +113,9 @@ class MybatisPlusLocalWorkspaceActivityRepositoryTest {
             assertThat(localGitDiff.latest("demo")).isEqualTo(gitDiff);
             assertThat(tableCount(context.getBean(DataSource.class), "matrixcode_local_file_operations")).isEqualTo(1);
             assertThat(tableCount(context.getBean(DataSource.class), "matrixcode_local_git_diff_summaries")).isEqualTo(1);
+            assertThat(idForProject(context.getBean(DataSource.class), "matrixcode_local_git_diff_summaries", "demo"))
+                    .isNotBlank()
+                    .isNotEqualTo("demo");
         }
     }
 
@@ -154,6 +160,17 @@ class MybatisPlusLocalWorkspaceActivityRepositoryTest {
              var resultSet = statement.executeQuery()) {
             resultSet.next();
             return resultSet.getInt(1);
+        }
+    }
+
+    private String idForProject(DataSource dataSource, String tableName, String projectId) throws SQLException {
+        try (var connection = dataSource.getConnection();
+             var statement = connection.prepareStatement("select id from " + tableName + " where project_id = ?")) {
+            statement.setString(1, projectId);
+            try (var resultSet = statement.executeQuery()) {
+                assertThat(resultSet.next()).as(tableName + " project row").isTrue();
+                return resultSet.getString(1);
+            }
         }
     }
 
