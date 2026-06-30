@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.matrixcode.modelgateway.domain.ModelCompletionResult;
 import com.matrixcode.modelgateway.domain.ModelProtocol;
 import com.matrixcode.modelgateway.domain.ModelProvider;
+import com.matrixcode.modelgateway.domain.ModelRequestRuntimeOptions;
 import com.matrixcode.modelgateway.domain.ProviderTokenUsage;
 import com.matrixcode.modelgateway.domain.PromptContract;
 import com.matrixcode.modelgateway.domain.RoleModelBinding;
@@ -52,9 +53,21 @@ public class OpenAiCompatibleModelClient implements ModelCompletionClient {
             String instruction,
             String cacheScopeId
     ) {
+        return complete(provider, binding, contract, instruction, cacheScopeId, ModelRequestRuntimeOptions.defaults());
+    }
+
+    @Override
+    public ModelCompletionResult complete(
+            ModelProvider provider,
+            RoleModelBinding binding,
+            PromptContract contract,
+            String instruction,
+            String cacheScopeId,
+            ModelRequestRuntimeOptions runtimeOptions
+    ) {
         var apiKey = apiKey(provider);
         var endpoint = chatCompletionsEndpoint(provider.baseUrl());
-        var requestBody = requestBody(provider, binding, contract, instruction, cacheScopeId);
+        var requestBody = requestBody(provider, binding, contract, instruction, cacheScopeId, runtimeOptions);
         try {
             var request = HttpRequest.newBuilder(URI.create(endpoint))
                     .timeout(REQUEST_TIMEOUT)
@@ -86,8 +99,12 @@ public class OpenAiCompatibleModelClient implements ModelCompletionClient {
             RoleModelBinding binding,
             PromptContract contract,
             String instruction,
-            String cacheScopeId
+            String cacheScopeId,
+            ModelRequestRuntimeOptions runtimeOptions
     ) {
+        var effectiveRuntimeOptions = runtimeOptions == null
+                ? ModelRequestRuntimeOptions.defaults()
+                : runtimeOptions;
         var requestBody = new LinkedHashMap<String, Object>();
         requestBody.put("model", binding.model());
         requestBody.put("messages", List.of(
@@ -98,7 +115,20 @@ public class OpenAiCompatibleModelClient implements ModelCompletionClient {
         if ("deepseek".equalsIgnoreCase(provider.id()) && cacheScopeId != null && !cacheScopeId.isBlank()) {
             requestBody.put("user_id", cacheScopeId.trim());
         }
+        if (supportsReasoningEffort(provider, binding)) {
+            effectiveRuntimeOptions.explicitReasoningEffort().ifPresent(effort -> requestBody.put("reasoning_effort", effort));
+        }
         return requestBody;
+    }
+
+    /**
+     * 判断当前供应商或模型是否支持显式推理力度参数。
+     * 作用域：OpenAI 兼容模型客户端；场景：只对 DeepSeek 或 reasoning 模型写入 `reasoning_effort`，避免普通模型拒绝未知字段。
+     */
+    private boolean supportsReasoningEffort(ModelProvider provider, RoleModelBinding binding) {
+        var providerId = provider.id() == null ? "" : provider.id().toLowerCase(java.util.Locale.ROOT);
+        var model = binding.model().toLowerCase(java.util.Locale.ROOT);
+        return "deepseek".equals(providerId) || model.contains("reason");
     }
 
     private String apiKey(ModelProvider provider) {

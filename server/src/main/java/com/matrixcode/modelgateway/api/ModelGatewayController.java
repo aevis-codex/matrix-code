@@ -12,6 +12,7 @@ import com.matrixcode.modelgateway.domain.ModelGatewayConfig;
 import com.matrixcode.modelgateway.domain.ModelProtocol;
 import com.matrixcode.modelgateway.domain.ModelProvider;
 import com.matrixcode.modelgateway.domain.ModelRequestCommand;
+import com.matrixcode.modelgateway.domain.ModelRequestRuntimeOptions;
 import com.matrixcode.modelgateway.domain.ModelRunRequestPage;
 import com.matrixcode.modelgateway.domain.ModelResponse;
 import com.matrixcode.modelgateway.domain.ModelRole;
@@ -194,7 +195,8 @@ public class ModelGatewayController {
                 command.actorUserId(),
                 command.agentRunId(),
                 command.instruction(),
-                command.contextBlocks()
+                command.contextBlocks(),
+                command.runtimeOptions()
         ));
     }
 
@@ -278,8 +280,32 @@ public class ModelGatewayController {
             String actorUserId,
             String agentRunId,
             String instruction,
-            List<ContextBlock> contextBlocks
+            List<ContextBlock> contextBlocks,
+            String providerId,
+            String model,
+            String approvalMode,
+            String reasoningEffort,
+            Boolean planMode,
+            Boolean goalMode,
+            Boolean tokenEconomy
     ) {
+        /**
+         * 转换前端 Agent Composer 的可选运行参数。
+         *
+         * <p>旧调用不传这些字段时会回落到默认值；新调用会把本轮模型选择、权限模式和协作方式写入
+         * 后端模型请求上下文，并传递给支持的供应商客户端。</p>
+         */
+        ModelRequestRuntimeOptions runtimeOptions() {
+            return new ModelRequestRuntimeOptions(
+                    providerId,
+                    model,
+                    approvalMode,
+                    reasoningEffort,
+                    Boolean.TRUE.equals(planMode),
+                    Boolean.TRUE.equals(goalMode),
+                    Boolean.TRUE.equals(tokenEconomy)
+            );
+        }
     }
 
     /**

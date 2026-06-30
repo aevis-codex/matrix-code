@@ -30,6 +30,7 @@ import {
   configureDeploymentTarget,
   createBug,
   createProductDrafts,
+  createRoleModelRequest,
   createProjectInvitation,
   createProjectUser,
   decideLocalCommandApproval,
@@ -96,6 +97,7 @@ vi.mock('../api/client', () => ({
   loadRuntimeDiagnostics: vi.fn(),
   updateRoleAgentConfig: vi.fn(),
   createProductDrafts: vi.fn(),
+  createRoleModelRequest: vi.fn(),
   createProjectInvitation: vi.fn(),
   freezeDocument: vi.fn(),
   issueActorToken: vi.fn(),
@@ -802,6 +804,7 @@ const 加载角色智能体配置 = vi.mocked(loadRoleAgentConfigs);
 const 加载运行诊断 = vi.mocked(loadRuntimeDiagnostics);
 const 更新角色智能体配置 = vi.mocked(updateRoleAgentConfig);
 const 生成需求草稿 = vi.mocked(createProductDrafts);
+const 创建角色模型请求 = vi.mocked(createRoleModelRequest);
 const 创建项目邀请 = vi.mocked(createProjectInvitation);
 const 冻结文档 = vi.mocked(freezeDocument);
 const 签发身份令牌 = vi.mocked(issueActorToken);
@@ -1323,6 +1326,29 @@ describe('MatrixCode 桌面工作台', () => {
     清理过期项目邀请.mockResolvedValue([]);
     加载运行诊断.mockResolvedValue(运行诊断报告);
     准备编码智能体执行.mockResolvedValue(编码智能体执行准备计划);
+    创建角色模型请求.mockResolvedValue({
+      requestId: 'composer-request-1',
+      answer: '已根据当前工作台上下文生成执行建议。',
+      contextManifest: {
+        role: 'PRODUCT',
+        blocks: [
+          { type: 'WORKBENCH_STAGE', summary: '当前阶段：测试执行', allowedByGate: true },
+          { type: 'COMPOSER_RUNTIME', summary: '工具权限：自动；推理力度：max；协作方式：计划、省 token', allowedByGate: true }
+        ],
+        omittedTypes: []
+      },
+      usage: 基础工作台.modelGateway.recentRequests[0].usage,
+      binding: 基础工作台.modelGateway.bindings[0],
+      promptContract: {
+        role: 'PRODUCT',
+        model: 'matrixcode-local-product',
+        toolContractVersion: 'tools-v1',
+        systemPrefix: 'stable prefix',
+        stablePrefixHash: 'fp-cache-001',
+        estimatedStablePrefixTokens: 128
+      },
+      createdAt: '2026-06-25T08:20:00Z'
+    });
     更新角色智能体配置.mockResolvedValue({
       ...默认角色智能体配置[1],
       systemPrompt: '你是开发编码智能体，必须先读代码再修改。',
@@ -1489,6 +1515,51 @@ describe('MatrixCode 桌面工作台', () => {
     expect(底部状态栏.getByText(/未关 Bug\s*0/)).toBeTruthy();
     expect(screen.getByRole('button', { name: '运行' })).toBeTruthy();
     expect(screen.queryByLabelText('本地执行代理')).toBeNull();
+  });
+
+  it('底部Composer会实时预览并携带运行选项调用后端模型', async () => {
+    render(<App />);
+
+    expect(await screen.findByText('支付系统重构')).toBeTruthy();
+    const 实时预览 = within(screen.getByLabelText('实时输出预览'));
+    expect(实时预览.getByText(/等待下方对话输入/)).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Agent 对话输入'), {
+      target: { value: '请梳理下一阶段交付任务' }
+    });
+    expect(实时预览.getByText(/请梳理下一阶段交付任务/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '协作方式' }));
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: /计划/ }));
+    fireEvent.click(screen.getByRole('button', { name: '推理力度：auto' }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /max/ }));
+    fireEvent.click(screen.getByRole('button', { name: '发送给角色智能体' }));
+
+    await waitFor(() => expect(创建角色模型请求).toHaveBeenCalled());
+    expect(创建角色模型请求).toHaveBeenCalledWith(
+      'demo',
+      'product',
+      expect.objectContaining({
+        actorUserId: 'user-product',
+        instruction: '请梳理下一阶段交付任务',
+        providerId: 'local-deterministic',
+        model: 'matrixcode-local-product',
+        approvalMode: 'auto',
+        reasoningEffort: 'max',
+        planMode: true,
+        goalMode: false,
+        tokenEconomy: true
+      }),
+      'user-product'
+    );
+    const requestInput = 创建角色模型请求.mock.calls.at(-1)?.[2];
+    expect(requestInput?.contextBlocks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'WORKBENCH_STAGE' }),
+        expect.objectContaining({ type: 'RECENT_EVENTS' })
+      ])
+    );
+    expect(await screen.findByText('已根据当前工作台上下文生成执行建议。')).toBeTruthy();
   });
 
   it('底部状态栏和运行中心展示真实 Agent 运行事件', async () => {

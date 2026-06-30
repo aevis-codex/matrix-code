@@ -510,7 +510,7 @@ button:disabled {
 
 .agent-output-console {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
 }
 
 .agent-console-header,
@@ -540,12 +540,115 @@ button:disabled {
 .agent-output-list {
   display: grid;
   align-content: start;
-  gap: 12px;
+  gap: 10px;
   min-height: 0;
   margin: 0;
   overflow: auto;
-  padding: 16px;
+  padding: 12px 16px;
   list-style: none;
+}
+
+.agent-live-preview {
+  display: grid;
+  gap: 10px;
+  border-bottom: 1px solid #272b31;
+  padding: 14px 16px;
+  background:
+    radial-gradient(circle at 94% 18%, rgba(242, 123, 63, 0.08), transparent 34%),
+    #0d1015;
+}
+
+.agent-live-preview header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.agent-live-preview header div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.agent-live-preview strong,
+.agent-live-preview span,
+.agent-live-preview em,
+.agent-live-preview pre,
+.agent-live-preview dd {
+  overflow-wrap: anywhere;
+}
+
+.agent-live-preview strong {
+  color: #f3f6fa;
+  font-size: 14px;
+}
+
+.agent-live-preview span,
+.agent-live-preview dt {
+  color: #8f98a6;
+  font-size: 12px;
+}
+
+.agent-live-preview em {
+  flex: 0 0 auto;
+  border: 1px solid #36402f;
+  border-radius: 999px;
+  padding: 3px 8px;
+  color: #bdf2c9;
+  background: #142119;
+  font-size: 11px;
+  font-style: normal;
+}
+
+.agent-live-preview pre {
+  max-height: 126px;
+  margin: 0;
+  overflow: auto;
+  border: 1px solid #242b34;
+  border-radius: 8px;
+  padding: 12px;
+  color: #cdd6e2;
+  background: #11161d;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.agent-live-preview--answered pre {
+  border-color: #29483a;
+  background: #101a16;
+}
+
+.agent-live-preview--error pre {
+  border-color: #6f332b;
+  color: #ffc0b0;
+  background: #211411;
+}
+
+.agent-live-preview__meta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.agent-live-preview__meta div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  border: 1px solid #242b34;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #10141a;
+}
+
+.agent-live-preview__meta dd {
+  margin: 0;
+  color: #dce3ec;
+  font-size: 12px;
+  font-weight: 650;
 }
 
 .agent-output-item {
@@ -650,7 +753,7 @@ button:disabled {
 
 .agent-dialog-console {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 .agent-dialog-console .active-panel-slot {
@@ -660,6 +763,381 @@ button:disabled {
 
 .agent-dialog-console .panel {
   background: #12161c;
+}
+
+.agent-composer {
+  position: relative;
+  display: grid;
+  gap: 0;
+  border-top: 1px solid #272b31;
+  background: #111419;
+}
+
+.agent-composer__input-wrap {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  padding: 12px 12px 8px;
+}
+
+.agent-composer__prompt {
+  padding-top: 8px;
+  color: #f27b3f;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.agent-composer__input-wrap textarea {
+  width: 100%;
+  min-height: 74px;
+  max-height: 160px;
+  resize: vertical;
+  border: 0;
+  padding: 8px 0;
+  color: #e7edf5;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.agent-composer__input-wrap textarea:focus {
+  outline: none;
+}
+
+.agent-composer__input-wrap textarea::placeholder {
+  color: #687382;
+}
+
+.agent-composer__send {
+  width: 34px;
+  height: 34px;
+  border: 1px solid #dd7443;
+  border-radius: 8px;
+  color: #fff7f0;
+  background: #f27b3f;
+  cursor: pointer;
+  font-size: 17px;
+  font-weight: 760;
+  line-height: 1;
+}
+
+.agent-composer__send:hover:not(:disabled) {
+  background: #ff884c;
+}
+
+.agent-composer__send:focus-visible {
+  outline: 2px solid #ffb088;
+  outline-offset: 2px;
+}
+
+.agent-composer__toolbar {
+  display: grid;
+  grid-template-columns: 38px minmax(210px, 250px) minmax(180px, 1fr) 112px 86px;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid #272b31;
+  padding: 8px 12px;
+  background: #12161c;
+}
+
+.agent-composer__control {
+  position: relative;
+  min-width: 0;
+}
+
+.agent-composer__icon-button,
+.agent-composer-more,
+.agent-composer-effort,
+.agent-composer-select select {
+  height: 34px;
+  border: 1px solid #303742;
+  color: #b8c2ce;
+  background: #10141a;
+  cursor: pointer;
+  font: inherit;
+}
+
+.agent-composer__icon-button {
+  display: inline-grid;
+  width: 34px;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 18px;
+}
+
+.agent-composer__icon-button:hover,
+.agent-composer__icon-button--open {
+  border-color: #3f4a58;
+  color: #eef2f6;
+  background: #1a2028;
+}
+
+.agent-composer-modebar {
+  --agent-composer-mode-index: 0;
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  min-width: 0;
+  height: 34px;
+  overflow: hidden;
+  border: 1px solid #303742;
+  border-radius: 999px;
+  padding: 2px;
+  background: #0f1319;
+}
+
+.agent-composer-modebar[data-mode='auto'] {
+  --agent-composer-mode-index: 1;
+}
+
+.agent-composer-modebar[data-mode='yolo'] {
+  --agent-composer-mode-index: 2;
+}
+
+.agent-composer-modebar__thumb {
+  position: absolute;
+  z-index: 0;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc((100% - 4px) / 3);
+  border: 1px solid #2fab68;
+  border-radius: 999px;
+  background: #1f8f55;
+  transform: translateX(calc(var(--agent-composer-mode-index) * 100%));
+  transition: transform 0.16s ease, border-color 0.16s, background 0.16s;
+}
+
+.agent-composer-modebar[data-mode='ask'] .agent-composer-modebar__thumb {
+  border-color: #435064;
+  background: #222a36;
+}
+
+.agent-composer-modebar[data-mode='yolo'] .agent-composer-modebar__thumb {
+  border-color: #c97547;
+  background: #8f4c2f;
+}
+
+.agent-composer-modebar__item {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  border: 0;
+  border-radius: 999px;
+  color: #8793a2;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.agent-composer-modebar__item--active {
+  color: #ffffff;
+}
+
+.agent-composer-select {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid #303742;
+  border-radius: 8px;
+  padding: 0 8px;
+  background: #10141a;
+}
+
+.agent-composer-select span {
+  color: #758191;
+  font-size: 12px;
+}
+
+.agent-composer-select select {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.agent-composer-effort,
+.agent-composer-more {
+  display: inline-flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 8px;
+  padding: 0 8px;
+}
+
+.agent-composer-effort {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  text-align: left;
+}
+
+.agent-composer-effort span {
+  overflow: hidden;
+  color: #788492;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-composer-effort strong {
+  color: #f0f4f8;
+  font-size: 12px;
+}
+
+.agent-composer-more {
+  color: #d2dae4;
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.agent-composer-menu {
+  position: absolute;
+  z-index: 35;
+  bottom: calc(100% + 8px);
+  min-width: 260px;
+  border: 1px solid #303742;
+  border-radius: 8px;
+  padding: 10px;
+  background: #15181e;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.42);
+}
+
+.agent-composer-menu--intent {
+  left: 0;
+  width: 330px;
+}
+
+.agent-composer-menu--effort,
+.agent-composer-menu--more {
+  right: 0;
+  min-width: 210px;
+}
+
+.agent-composer-menu__label {
+  margin: 0 0 8px;
+  color: #8f98a6;
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.agent-composer-menu__item {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 48px;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  padding: 9px;
+  color: #c7d0dc;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.agent-composer-menu__item:hover,
+.agent-composer-menu__item--active {
+  background: #1b2028;
+}
+
+.agent-composer-menu__mark {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  color: #aeb8c5;
+  font-size: 18px;
+}
+
+.agent-composer-menu__item strong,
+.agent-composer-menu__item small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agent-composer-menu__item strong {
+  color: #eef2f6;
+  font-size: 13px;
+}
+
+.agent-composer-menu__item small,
+.agent-composer-menu__note {
+  color: #8f98a6;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.agent-composer-menu__item i {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  border: 1px solid #303742;
+  border-radius: 999px;
+  background: #0f1319;
+}
+
+.agent-composer-menu__item i::after {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  content: "";
+  background: #222a36;
+  transition: transform 0.16s ease, background 0.16s ease;
+}
+
+.agent-composer-menu__item--active i {
+  border-color: #2fab68;
+  background: #143922;
+}
+
+.agent-composer-menu__item--active i::after {
+  background: #2fab68;
+  transform: translateX(20px);
+}
+
+.agent-composer-menu__choice {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  padding: 10px;
+  color: #b9c2cd;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.agent-composer-menu__choice:hover,
+.agent-composer-menu__choice--active {
+  color: #f4f7fb;
+  background: #1b2028;
+}
+
+.agent-composer-menu__choice em {
+  color: #ff965f;
+  font-style: normal;
+}
+
+.agent-composer-menu__note {
+  display: block;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
 }
 
 .workspace-context {
@@ -2535,9 +3013,28 @@ button:disabled {
   .workspace-extras,
   .field-grid,
   .agent-output-digest,
+  .agent-live-preview__meta,
+  .agent-composer__toolbar,
   .identity-token-form,
   .role-agent-editor__cache-grid {
     grid-template-columns: 1fr;
+  }
+
+  .agent-composer__toolbar {
+    align-items: stretch;
+  }
+
+  .agent-composer__control--intent {
+    justify-self: start;
+  }
+
+  .agent-composer-menu {
+    position: fixed;
+    right: 16px;
+    bottom: 52px;
+    left: 16px;
+    width: auto;
+    min-width: 0;
   }
 
   .identity-token-status {

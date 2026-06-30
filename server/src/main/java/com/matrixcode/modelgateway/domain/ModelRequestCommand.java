@@ -10,7 +10,8 @@ public record ModelRequestCommand(
         String actorUserId,
         String agentRunId,
         String instruction,
-        List<ContextBlock> contextBlocks
+        List<ContextBlock> contextBlocks,
+        ModelRequestRuntimeOptions runtimeOptions
 ) {
     /**
      * 构造不绑定具体 Agent 运行的模型请求命令。
@@ -19,7 +20,7 @@ public record ModelRequestCommand(
      * 但不会在审计视图中被标记为某次 Agent 运行的强关联请求。</p>
      */
     public ModelRequestCommand(String projectId, ModelRole role, String instruction, List<ContextBlock> contextBlocks) {
-        this(projectId, role, "", "", instruction, contextBlocks);
+        this(projectId, role, "", "", instruction, contextBlocks, ModelRequestRuntimeOptions.defaults());
     }
 
     /**
@@ -34,7 +35,23 @@ public record ModelRequestCommand(
             String instruction,
             List<ContextBlock> contextBlocks
     ) {
-        this(projectId, role, actorUserId, "", instruction, contextBlocks);
+        this(projectId, role, actorUserId, "", instruction, contextBlocks, ModelRequestRuntimeOptions.defaults());
+    }
+
+    /**
+     * 构造绑定具体 Agent 运行但使用默认 Composer 选项的模型请求命令。
+     *
+     * <p>该兼容入口保留运行 trace 关联，同时不要求旧调用方感知前端 Composer 新增控制项。</p>
+     */
+    public ModelRequestCommand(
+            String projectId,
+            ModelRole role,
+            String actorUserId,
+            String agentRunId,
+            String instruction,
+            List<ContextBlock> contextBlocks
+    ) {
+        this(projectId, role, actorUserId, agentRunId, instruction, contextBlocks, ModelRequestRuntimeOptions.defaults());
     }
 
     /**
@@ -51,6 +68,7 @@ public record ModelRequestCommand(
         agentRunId = optionalText(agentRunId);
         instruction = requireText(instruction, "模型请求指令不能为空");
         contextBlocks = contextBlocks == null ? List.of() : List.copyOf(contextBlocks);
+        runtimeOptions = runtimeOptions == null ? ModelRequestRuntimeOptions.defaults() : runtimeOptions;
     }
 
     private static String requireText(String value, String message) {

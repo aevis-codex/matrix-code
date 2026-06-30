@@ -1638,7 +1638,18 @@ export function bindRoleModel(
 export function createRoleModelRequest(
   projectId: string,
   role: string,
-  input: { actorUserId?: string; instruction: string; contextBlocks: ContextBlock[] },
+  input: {
+    actorUserId?: string;
+    instruction: string;
+    contextBlocks: ContextBlock[];
+    providerId?: string;
+    model?: string;
+    approvalMode?: string;
+    reasoningEffort?: string;
+    planMode?: boolean;
+    goalMode?: boolean;
+    tokenEconomy?: boolean;
+  },
   actorUserIdOrServerUrl = input.actorUserId ?? matrixCodeServerUrl(),
   serverUrl?: string
 ): Promise<ModelResponse> {

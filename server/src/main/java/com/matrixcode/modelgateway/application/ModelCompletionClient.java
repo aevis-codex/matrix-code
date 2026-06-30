@@ -3,6 +3,7 @@ package com.matrixcode.modelgateway.application;
 import com.matrixcode.modelgateway.domain.ModelProtocol;
 import com.matrixcode.modelgateway.domain.ModelProvider;
 import com.matrixcode.modelgateway.domain.ModelCompletionResult;
+import com.matrixcode.modelgateway.domain.ModelRequestRuntimeOptions;
 import com.matrixcode.modelgateway.domain.PromptContract;
 import com.matrixcode.modelgateway.domain.RoleModelBinding;
 
@@ -31,4 +32,20 @@ public interface ModelCompletionClient {
             String instruction,
             String cacheScopeId
     );
+
+    /**
+     * 执行一次带 Composer 运行选项的模型补全请求。
+     *
+     * <p>默认实现兼容旧客户端；支持推理力度或供应商特定参数的客户端可覆盖该方法。</p>
+     */
+    default ModelCompletionResult complete(
+            ModelProvider provider,
+            RoleModelBinding binding,
+            PromptContract contract,
+            String instruction,
+            String cacheScopeId,
+            ModelRequestRuntimeOptions runtimeOptions
+    ) {
+        return complete(provider, binding, contract, instruction, cacheScopeId);
+    }
 }

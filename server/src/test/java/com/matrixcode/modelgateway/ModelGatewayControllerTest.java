@@ -116,6 +116,42 @@ class ModelGatewayControllerTest {
     }
 
     @Test
+    void AgentComposer字段会进入后端模型请求上下文() throws Exception {
+        repository.ensureMember(member("demo", "user-dev", "DEVELOPER"));
+
+        mockMvc.perform(post("/api/projects/demo/roles/developer/model-requests")
+                        .header(CURRENT_USER_HEADER, "user-dev")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "actorUserId":"user-dev",
+                                  "instruction":"重构登录工作台布局。",
+                                  "providerId":"local-deterministic",
+                                  "model":"matrixcode-local-developer",
+                                  "approvalMode":"auto",
+                                  "reasoningEffort":"max",
+                                  "planMode":true,
+                                  "goalMode":false,
+                                  "tokenEconomy":true,
+                                  "contextBlocks":[{"type":"WORKBENCH_STAGE","summary":"当前阶段：开发中","allowedByGate":true}]
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.binding.providerId").value("local-deterministic"))
+                .andExpect(jsonPath("$.binding.model").value("matrixcode-local-developer"))
+                .andExpect(jsonPath("$.contextManifest.blocks[*].type").value(
+                        org.hamcrest.Matchers.hasItems("WORKBENCH_STAGE", "COMPOSER_RUNTIME")
+                ))
+                .andExpect(jsonPath("$.contextManifest.blocks[?(@.type=='COMPOSER_RUNTIME')].summary").value(
+                        org.hamcrest.Matchers.hasItem(org.hamcrest.Matchers.allOf(
+                                org.hamcrest.Matchers.containsString("工具权限：自动"),
+                                org.hamcrest.Matchers.containsString("推理力度：max"),
+                                org.hamcrest.Matchers.containsString("协作方式：计划、省 token")
+                        ))
+                ));
+    }
+
+    @Test
     void 创建模型请求缺少请求身份时返回401() throws Exception {
         mockMvc.perform(post("/api/projects/demo/roles/product/model-requests")
                         .contentType(MediaType.APPLICATION_JSON)

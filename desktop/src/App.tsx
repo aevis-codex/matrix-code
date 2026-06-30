@@ -7,6 +7,7 @@ import {
   claimNextAgentRun,
   configureComposeEnvironment,
   configureDeploymentTarget,
+  createRoleModelRequest,
   createBug,
   createProductDrafts,
   decideLocalCommandApproval,
@@ -40,12 +41,14 @@ import {
   type AgentRunEventRecord,
   type AgentRunRecord,
   type AgentRunUserAuditReport,
+  type ContextBlock,
   type DocumentSummary,
   type DocumentState,
   type DocumentType,
   type DeploymentOperationInput,
   type CodingAgentExecutionPlan,
   type CodingAgentPatchResult,
+  type ModelResponse,
   type ModelRole,
   type ProjectEvent,
   type ProjectMember,
@@ -95,6 +98,18 @@ type WorkbenchState =
 
 type RuntimeNotificationFilter = 'all' | 'unread';
 type WorkspaceContextTab = 'overview' | 'files' | 'changes';
+type ComposerApprovalMode = 'ask' | 'auto' | 'yolo';
+type ComposerReasoningEffort = 'auto' | 'high' | 'max';
+type ComposerIntentState = {
+  plan: boolean;
+  goal: boolean;
+  tokenEconomy: boolean;
+};
+type ComposerSubmitState =
+  | { status: 'idle' }
+  | { status: 'sending'; submittedInstruction: string; submittedAt: string }
+  | { status: 'answered'; submittedInstruction: string; submittedAt: string; response: ModelResponse }
+  | { status: 'error'; submittedInstruction: string; submittedAt: string; message: string };
 
 type RuntimeDiagnosticsState =
   | { type: 'idle' }
@@ -171,6 +186,16 @@ const runtimeCheckStatusLabels: Record<RuntimeCheckStatus, string> = {
   FAIL: '失败',
   SKIPPED: '跳过'
 };
+const composerApprovalModeLabels: Record<ComposerApprovalMode, string> = {
+  ask: '问询',
+  auto: '自动',
+  yolo: 'Yolo'
+};
+const composerReasoningEffortLabels: Record<ComposerReasoningEffort, string> = {
+  auto: 'auto',
+  high: 'high',
+  max: 'max'
+};
 
 function buildStageViews(currentStage: string): StageView[] {
   const activeIndex = workflowStages.findIndex((stage) =>
@@ -195,6 +220,62 @@ function buildStageViews(currentStage: string): StageView[] {
       statusLabel
     };
   });
+}
+
+/**
+ * 生成前端模型下拉框的稳定引用值。
+ * 作用域：Agent Composer；场景：把用户选择的供应商和模型映射回后端已绑定模型。
+ */
+function formatModelBindingRef(binding: { providerId: string; model: string } | undefined) {
+  return binding ? `${binding.providerId}/${binding.model}` : '未绑定模型';
+}
+
+/**
+ * 压缩实时输入摘要。
+ * 作用域：大模型输出台；场景：用户在底部输入时，上方实时预览只展示低敏短摘要。
+ */
+function summarizeComposerDraft(draft: string) {
+  const compact = draft.trim().replace(/\s+/g, ' ');
+  if (!compact) {
+    return '';
+  }
+  return compact.length > 120 ? `${compact.slice(0, 120)}...` : compact;
+}
+
+/**
+ * 构建随 Agent Composer 请求发送的工作台上下文。
+ * 作用域：模型网关前端调用；场景：只发送阶段、最近文档和关键事件摘要，运行选项由后端统一补充。
+ */
+function buildComposerContextBlocks(workbench: ProjectWorkbench, selectedRole: string): ContextBlock[] {
+  const recentDocuments = workbench.documents
+    .slice(0, 3)
+    .map((document) => `${document.title}(${documentStateLabels[document.state]} v${document.version})`)
+    .join('；');
+  const recentEvents = workbench.events.slice(0, 3).map((event) => event.message).join('；');
+  const blocks: ContextBlock[] = [
+    {
+      type: 'WORKBENCH_STAGE',
+      summary: `项目 ${workbench.projectName} 当前阶段：${workbench.currentStage}；当前角色：${selectedRole}`,
+      allowedByGate: true
+    }
+  ];
+
+  if (recentDocuments) {
+    blocks.push({
+      type: 'RECENT_DOCUMENTS',
+      summary: recentDocuments,
+      allowedByGate: true
+    });
+  }
+  if (recentEvents) {
+    blocks.push({
+      type: 'RECENT_EVENTS',
+      summary: recentEvents,
+      allowedByGate: true
+    });
+  }
+
+  return blocks;
 }
 
 function formatEventTime(event: ProjectEvent) {
@@ -556,21 +637,53 @@ function formatTimelineTime(occurredAt: string) {
   return `${month}月${day}日 ${hour}:${minute}`;
 }
 
+/**
+ * 展示角色智能体的实时输出预览和最近运行摘要。
+ * 作用域：工作台中间主区域；场景：底部对话输入时即时预览，模型返回后展示真实响应摘要。
+ */
 function AgentOutputConsole({
   agentRunEvents,
   agentRuns,
+  approvalMode,
+  composerDraft,
+  composerSubmitState,
+  currentModelRef,
   documents,
   events,
+  intentState,
+  reasoningEffort,
   selectedRole
 }: {
   agentRunEvents: AgentRunEventRecord[];
   agentRuns: AgentRunRecord[];
+  approvalMode: ComposerApprovalMode;
+  composerDraft: string;
+  composerSubmitState: ComposerSubmitState;
+  currentModelRef: string;
   documents: DocumentSummary[];
   events: ProjectEvent[];
+  intentState: ComposerIntentState;
+  reasoningEffort: ComposerReasoningEffort;
   selectedRole: string;
 }) {
   const recentDocuments = documents.slice(0, 3);
   const recentEvents = events.slice(0, 3);
+  const liveDraft = summarizeComposerDraft(composerDraft);
+  const intentLabels = [
+    intentState.plan ? '计划' : '',
+    intentState.goal ? '目标' : '',
+    intentState.tokenEconomy ? '省 token' : ''
+  ].filter(Boolean);
+  const submitStatusLabel =
+    composerSubmitState.status === 'sending'
+      ? '模型请求中'
+      : composerSubmitState.status === 'answered'
+        ? '已返回'
+        : composerSubmitState.status === 'error'
+          ? '请求失败'
+          : liveDraft
+            ? '草稿同步'
+            : '等待输入';
 
   return (
     <section className="agent-output-console" aria-label="大模型输出台">
@@ -579,8 +692,49 @@ function AgentOutputConsole({
           <p className="eyebrow">大模型输出台</p>
           <h3>{selectedRole}智能体输出</h3>
         </div>
-        <span>运行 {agentRuns.length.toLocaleString('zh-CN')} 次</span>
+        <span>{submitStatusLabel} · 运行 {agentRuns.length.toLocaleString('zh-CN')} 次</span>
       </header>
+      <section className={`agent-live-preview agent-live-preview--${composerSubmitState.status}`} aria-label="实时输出预览">
+        <header>
+          <div>
+            <strong>{composerSubmitState.status === 'answered' ? '模型回复' : '实时上下文预览'}</strong>
+            <span>{currentModelRef}</span>
+          </div>
+          <em>{composerApprovalModeLabels[approvalMode]} · effort {composerReasoningEffortLabels[reasoningEffort]}</em>
+        </header>
+        {composerSubmitState.status === 'answered' ? (
+          <pre>{composerSubmitState.response.answer}</pre>
+        ) : composerSubmitState.status === 'sending' ? (
+          <pre>{composerSubmitState.submittedInstruction}</pre>
+        ) : composerSubmitState.status === 'error' ? (
+          <pre>{composerSubmitState.message}</pre>
+        ) : (
+          <pre>{liveDraft || '等待下方对话输入。输入时这里会同步展示将发送给当前角色智能体的任务摘要。'}</pre>
+        )}
+        <dl className="agent-live-preview__meta">
+          <div>
+            <dt>角色</dt>
+            <dd>{selectedRole}</dd>
+          </div>
+          <div>
+            <dt>协作方式</dt>
+            <dd>{intentLabels.join('、') || '默认'}</dd>
+          </div>
+          <div>
+            <dt>上下文</dt>
+            <dd>{documents.length.toLocaleString('zh-CN')} 份文档 · {events.length.toLocaleString('zh-CN')} 条事件</dd>
+          </div>
+          {composerSubmitState.status === 'answered' ? (
+            <div>
+              <dt>用量</dt>
+              <dd>
+                命中 {composerSubmitState.response.usage.cacheHitTokens.toLocaleString('zh-CN')} · 输出{' '}
+                {composerSubmitState.response.usage.outputTokens.toLocaleString('zh-CN')}
+              </dd>
+            </div>
+          ) : null}
+        </dl>
+      </section>
       {agentRuns.length ? (
         <ol className="agent-output-list">
           {agentRuns.slice(0, 5).map((run) => {
@@ -636,6 +790,240 @@ function AgentOutputConsole({
         </section>
       </div>
     </section>
+  );
+}
+
+/**
+ * 底部 Agent 对话台。
+ * 作用域：工作台模型交互入口；场景：选择协作方式、权限模式、模型和推理力度后发起真实后端模型请求。
+ */
+function AgentComposer({
+  approvalMode,
+  currentModelRef,
+  draft,
+  intentState,
+  modelOptions,
+  onApprovalModeChange,
+  onCurrentModelRefChange,
+  onDraftChange,
+  onIntentStateChange,
+  onReasoningEffortChange,
+  onSubmit,
+  reasoningEffort,
+  selectedRole,
+  submitting
+}: {
+  approvalMode: ComposerApprovalMode;
+  currentModelRef: string;
+  draft: string;
+  intentState: ComposerIntentState;
+  modelOptions: string[];
+  onApprovalModeChange: (mode: ComposerApprovalMode) => void;
+  onCurrentModelRefChange: (modelRef: string) => void;
+  onDraftChange: (draft: string) => void;
+  onIntentStateChange: (state: ComposerIntentState) => void;
+  onReasoningEffortChange: (effort: ComposerReasoningEffort) => void;
+  onSubmit: (instruction: string) => Promise<void>;
+  reasoningEffort: ComposerReasoningEffort;
+  selectedRole: string;
+  submitting: boolean;
+}) {
+  const [intentMenuOpen, setIntentMenuOpen] = useState(false);
+  const [effortMenuOpen, setEffortMenuOpen] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const canSubmit = Boolean(draft.trim()) && !submitting;
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!canSubmit) {
+      return;
+    }
+    await onSubmit(draft.trim());
+  }
+
+  function toggleIntent(key: keyof ComposerIntentState) {
+    onIntentStateChange({ ...intentState, [key]: !intentState[key] });
+  }
+
+  return (
+    <form className="agent-composer" aria-label="Agent 对话 Composer" onSubmit={(event) => void handleSubmit(event)}>
+      <label className="agent-composer__input-wrap" htmlFor="agent-composer-input">
+        <span className="agent-composer__prompt">›</span>
+        <textarea
+          aria-label="Agent 对话输入"
+          id="agent-composer-input"
+          onChange={(event) => onDraftChange(event.target.value)}
+          placeholder={`给${selectedRole}智能体发消息...（/ 命令 · @ 文档 · ! 终端）`}
+          rows={3}
+          value={draft}
+        />
+        <button aria-label="发送给角色智能体" className="agent-composer__send" disabled={!canSubmit} type="submit">
+          ↑
+        </button>
+      </label>
+
+      <div className="agent-composer__toolbar" aria-label="Agent 对话控制条">
+        <div className="agent-composer__control agent-composer__control--intent">
+          <button
+            aria-expanded={intentMenuOpen}
+            aria-haspopup="menu"
+            aria-label="协作方式"
+            className={`agent-composer__icon-button ${intentMenuOpen ? 'agent-composer__icon-button--open' : ''}`}
+            onClick={() => {
+              setIntentMenuOpen((open) => !open);
+              setEffortMenuOpen(false);
+              setMoreMenuOpen(false);
+            }}
+            title="协作方式"
+            type="button"
+          >
+            ☷
+          </button>
+          {intentMenuOpen ? (
+            <div className="agent-composer-menu agent-composer-menu--intent" role="menu" aria-label="协作方式">
+              <p className="agent-composer-menu__label">协作方式</p>
+              <button
+                className={`agent-composer-menu__item ${intentState.plan ? 'agent-composer-menu__item--active' : ''}`}
+                onClick={() => toggleIntent('plan')}
+                role="menuitemcheckbox"
+                aria-checked={intentState.plan}
+                type="button"
+              >
+                <span className="agent-composer-menu__mark">☰</span>
+                <span>
+                  <strong>计划</strong>
+                  <small>先只读产出计划，确认后再写入。</small>
+                </span>
+                <i aria-hidden="true" />
+              </button>
+              <button
+                className={`agent-composer-menu__item ${intentState.goal ? 'agent-composer-menu__item--active' : ''}`}
+                onClick={() => toggleIntent('goal')}
+                role="menuitemcheckbox"
+                aria-checked={intentState.goal}
+                type="button"
+              >
+                <span className="agent-composer-menu__mark">◎</span>
+                <span>
+                  <strong>目标</strong>
+                  <small>输入目标后，让角色智能体持续推进。</small>
+                </span>
+                <i aria-hidden="true" />
+              </button>
+              <button
+                className={`agent-composer-menu__item ${intentState.tokenEconomy ? 'agent-composer-menu__item--active' : ''}`}
+                onClick={() => toggleIntent('tokenEconomy')}
+                role="menuitemcheckbox"
+                aria-checked={intentState.tokenEconomy}
+                type="button"
+              >
+                <span className="agent-composer-menu__mark">◔</span>
+                <span>
+                  <strong>省 token</strong>
+                  <small>精简动态上下文，保留稳定前缀缓存命中。</small>
+                </span>
+                <i aria-hidden="true" />
+              </button>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="agent-composer-modebar" data-mode={approvalMode} aria-label="工具权限">
+          <span className="agent-composer-modebar__thumb" aria-hidden="true" />
+          {(['ask', 'auto', 'yolo'] as ComposerApprovalMode[]).map((mode) => (
+            <button
+              aria-pressed={approvalMode === mode}
+              className={`agent-composer-modebar__item ${
+                approvalMode === mode ? 'agent-composer-modebar__item--active' : ''
+              }`}
+              key={mode}
+              onClick={() => onApprovalModeChange(mode)}
+              type="button"
+            >
+              {composerApprovalModeLabels[mode]}
+            </button>
+          ))}
+        </div>
+
+        <label className="agent-composer-select">
+          <span>模型</span>
+          <select aria-label="当前模型" onChange={(event) => onCurrentModelRefChange(event.target.value)} value={currentModelRef}>
+            {modelOptions.map((modelRef) => (
+              <option key={modelRef} value={modelRef}>
+                {modelRef}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div className="agent-composer__control agent-composer__control--effort">
+          <button
+            aria-expanded={effortMenuOpen}
+            aria-haspopup="menu"
+            aria-label={`推理力度：${reasoningEffort}`}
+            className="agent-composer-effort"
+            onClick={() => {
+              setEffortMenuOpen((open) => !open);
+              setIntentMenuOpen(false);
+              setMoreMenuOpen(false);
+            }}
+            type="button"
+          >
+            <span>推理力度</span>
+            <strong>{reasoningEffort}</strong>
+          </button>
+          {effortMenuOpen ? (
+            <div className="agent-composer-menu agent-composer-menu--effort" role="menu" aria-label="推理力度">
+              {(['auto', 'high', 'max'] as ComposerReasoningEffort[]).map((effort) => (
+                <button
+                  className={`agent-composer-menu__choice ${
+                    reasoningEffort === effort ? 'agent-composer-menu__choice--active' : ''
+                  }`}
+                  key={effort}
+                  onClick={() => {
+                    onReasoningEffortChange(effort);
+                    setEffortMenuOpen(false);
+                  }}
+                  role="menuitemradio"
+                  aria-checked={reasoningEffort === effort}
+                  type="button"
+                >
+                  <span>◜</span>
+                  <strong>{effort}</strong>
+                  {reasoningEffort === effort ? <em>✓</em> : null}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="agent-composer__control agent-composer__control--more">
+          <button
+            aria-expanded={moreMenuOpen}
+            aria-haspopup="menu"
+            aria-label="更多控制"
+            className="agent-composer-more"
+            onClick={() => {
+              setMoreMenuOpen((open) => !open);
+              setIntentMenuOpen(false);
+              setEffortMenuOpen(false);
+            }}
+            type="button"
+          >
+            <span>•••</span>
+            更多
+          </button>
+          {moreMenuOpen ? (
+            <div className="agent-composer-menu agent-composer-menu--more" role="menu" aria-label="更多控制">
+              <p className="agent-composer-menu__label">当前会话</p>
+              <span className="agent-composer-menu__note">角色：{selectedRole}</span>
+              <span className="agent-composer-menu__note">模型：{currentModelRef}</span>
+              <span className="agent-composer-menu__note">发送后会写入模型请求 trace。</span>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </form>
   );
 }
 
@@ -791,6 +1179,16 @@ function App() {
   const [loginPassword, setLoginPassword] = useState('');
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginErrorMessage, setLoginErrorMessage] = useState('');
+  const [composerDraft, setComposerDraft] = useState('');
+  const [composerIntentState, setComposerIntentState] = useState<ComposerIntentState>({
+    plan: false,
+    goal: false,
+    tokenEconomy: true
+  });
+  const [composerApprovalMode, setComposerApprovalMode] = useState<ComposerApprovalMode>('auto');
+  const [composerReasoningEffort, setComposerReasoningEffort] = useState<ComposerReasoningEffort>('auto');
+  const [composerModelRef, setComposerModelRef] = useState('');
+  const [composerSubmitState, setComposerSubmitState] = useState<ComposerSubmitState>({ status: 'idle' });
 
   async function refreshWorkbench(options: { keepCurrent?: boolean; actorUserId?: string } = {}) {
     const currentReadyState = workbenchState.type === 'ready' ? workbenchState : null;
@@ -947,6 +1345,11 @@ function App() {
       : fallbackActorIdByDisplayRole[readySelectedRole] ?? 'user-product';
   const shouldRefreshLocalTasks =
     workbenchState.type === 'ready' && hasLiveLocalExecutionTask(workbenchState.workbench);
+  const readyModelRefs =
+    workbenchState.type === 'ready'
+      ? workbenchState.workbench.modelGateway.bindings.map((binding) => formatModelBindingRef(binding))
+      : [];
+  const readyModelRefsKey = readyModelRefs.join('|');
 
   useEffect(() => {
     if (!shouldRefreshLocalTasks) {
@@ -959,6 +1362,20 @@ function App() {
 
     return () => window.clearInterval(intervalId);
   }, [shouldRefreshLocalTasks]);
+
+  useEffect(() => {
+    if (workbenchState.type !== 'ready') {
+      return;
+    }
+
+    const roleKey = roleKeyByDisplayRole[readySelectedRole];
+    const roleBinding = workbenchState.workbench.modelGateway.bindings.find((binding) => binding.role === roleKey);
+    const fallbackBinding = workbenchState.workbench.modelGateway.bindings[0];
+    const preferredModelRef = formatModelBindingRef(roleBinding ?? fallbackBinding);
+    setComposerModelRef((current) =>
+      current && readyModelRefs.includes(current) ? current : preferredModelRef
+    );
+  }, [workbenchState.type, readySelectedRole, readyModelRefsKey]);
 
   useEffect(() => {
     if (!readyProjectId) {
@@ -1365,6 +1782,53 @@ function App() {
     );
   }
 
+  /**
+   * 提交底部 Agent Composer 指令。
+   * 作用域：工作台模型交互；场景：把当前角色、上下文摘要、模型覆盖和运行选项提交到后端模型网关。
+   */
+  async function handleSubmitAgentComposer(instruction: string) {
+    if (workbenchState.type !== 'ready') {
+      return;
+    }
+
+    const currentWorkbench = workbenchState.workbench;
+    const currentSelectedRole = readySelectedRole;
+    const roleKey = roleKeyByDisplayRole[currentSelectedRole];
+    const rolePath = rolePathByModelRole[roleKey];
+    const selectedModel = currentWorkbench.modelGateway.bindings.find((binding) => formatModelBindingRef(binding) === composerModelRef);
+    const submittedAt = new Date().toISOString();
+    setComposerSubmitState({ status: 'sending', submittedInstruction: instruction, submittedAt });
+    try {
+      const response = await createRoleModelRequest(
+        currentWorkbench.projectId,
+        rolePath,
+        {
+          actorUserId: currentActorId,
+          instruction,
+          contextBlocks: buildComposerContextBlocks(currentWorkbench, currentSelectedRole),
+          providerId: selectedModel?.providerId,
+          model: selectedModel?.model,
+          approvalMode: composerApprovalMode,
+          reasoningEffort: composerReasoningEffort,
+          planMode: composerIntentState.plan,
+          goalMode: composerIntentState.goal,
+          tokenEconomy: composerIntentState.tokenEconomy
+        },
+        currentActorId
+      );
+      setComposerDraft('');
+      setComposerSubmitState({ status: 'answered', submittedInstruction: instruction, submittedAt, response });
+      void refreshWorkbench({ keepCurrent: true }).catch(() => undefined);
+    } catch (error) {
+      setComposerSubmitState({
+        status: 'error',
+        submittedInstruction: instruction,
+        submittedAt,
+        message: error instanceof Error ? error.message : '模型请求失败，请稍后重试'
+      });
+    }
+  }
+
   if (workbenchState.type === 'loading') {
     return (
       <main className="loading">
@@ -1442,6 +1906,9 @@ function App() {
   const pendingApprovalCount = countPendingApprovals(workbench);
   const topNotification = latestVisibleNotification(runtimeNotifications, dismissedNotificationIds);
   const hasServerRuntimeNotifications = Array.isArray(workbench.runtimeNotifications);
+  const modelOptions = readyModelRefs.length ? readyModelRefs : [formatModelBindingRef(workbench.modelGateway.bindings[0])];
+  const currentComposerModelRef = composerModelRef || modelOptions[0];
+  const composerSubmitting = composerSubmitState.status === 'sending';
 
   return (
     <main className="workspace">
@@ -1565,8 +2032,14 @@ function App() {
         <AgentOutputConsole
           agentRunEvents={workbenchState.agentRunEvents}
           agentRuns={workbenchState.agentRuns}
+          approvalMode={composerApprovalMode}
+          composerDraft={composerDraft}
+          composerSubmitState={composerSubmitState}
+          currentModelRef={currentComposerModelRef}
           documents={workbench.documents}
           events={workbench.events}
+          intentState={composerIntentState}
+          reasoningEffort={composerReasoningEffort}
           selectedRole={selectedRole}
         />
 
@@ -1622,6 +2095,22 @@ function App() {
               />
             ) : null}
           </div>
+          <AgentComposer
+            approvalMode={composerApprovalMode}
+            currentModelRef={currentComposerModelRef}
+            draft={composerDraft}
+            intentState={composerIntentState}
+            modelOptions={modelOptions}
+            onApprovalModeChange={setComposerApprovalMode}
+            onCurrentModelRefChange={setComposerModelRef}
+            onDraftChange={setComposerDraft}
+            onIntentStateChange={setComposerIntentState}
+            onReasoningEffortChange={setComposerReasoningEffort}
+            onSubmit={handleSubmitAgentComposer}
+            reasoningEffort={composerReasoningEffort}
+            selectedRole={selectedRole}
+            submitting={composerSubmitting}
+          />
         </section>
       </section>
 

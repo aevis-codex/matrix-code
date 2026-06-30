@@ -319,6 +319,7 @@ public class ModelGatewayService {
                 roleConfig.systemPrompt()
         );
         var contextBlocks = new java.util.ArrayList<>(command.contextBlocks());
+        command.runtimeOptions().composerContextBlock().ifPresent(contextBlocks::add);
         contextBlocks.addAll(vectorContextRetriever.recall(command.projectId(), command.role(), command.instruction()));
         var manifest = contextEngine.build(command.role().name(), contextBlocks);
         var renderedInstruction = renderInstruction(roleConfig, command.instruction());
@@ -330,7 +331,14 @@ public class ModelGatewayService {
                 binding.model(),
                 roleConfig.cacheScopeStrategy()
         );
-        var completion = modelClient(provider).complete(provider, binding, contract, renderedInstruction, cacheScopeId);
+        var completion = modelClient(provider).complete(
+                provider,
+                binding,
+                contract,
+                renderedInstruction,
+                cacheScopeId,
+                command.runtimeOptions()
+        );
         var answer = completion.answer();
         var contextTypes = manifest.blocks().stream()
                 .map(block -> block.type())
@@ -632,7 +640,30 @@ public class ModelGatewayService {
     }
 
     private RoleModelBinding effectiveBinding(ModelRequestCommand command, RoleAgentConfig config) {
-        return effectiveBinding(command.projectId(), config);
+        var defaultBinding = effectiveBinding(command.projectId(), config);
+        var runtimeOptions = command.runtimeOptions();
+        if (!runtimeOptions.hasModelOverride()) {
+            return defaultBinding;
+        }
+        var selectedBinding = effectiveBindings(command.projectId()).stream()
+                .filter(binding -> binding.providerId().equals(runtimeOptions.providerId())
+                        && binding.model().equals(runtimeOptions.model()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "模型不在项目已绑定列表中：" + runtimeOptions.providerId() + "/" + runtimeOptions.model()
+                ));
+        return new RoleModelBinding(
+                command.projectId(),
+                config.role(),
+                selectedBinding.providerId(),
+                selectedBinding.model(),
+                selectedBinding.currency(),
+                selectedBinding.cacheHitPerMillion(),
+                selectedBinding.cacheMissInputPerMillion(),
+                selectedBinding.outputPerMillion(),
+                selectedBinding.contextBudgetTokens(),
+                selectedBinding.toolContractVersion()
+        );
     }
 
     private RoleModelBinding effectiveBinding(String projectId, RoleAgentConfig config) {

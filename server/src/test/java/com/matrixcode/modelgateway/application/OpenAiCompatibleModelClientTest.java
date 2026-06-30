@@ -3,6 +3,7 @@ package com.matrixcode.modelgateway.application;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.matrixcode.modelgateway.domain.ModelProtocol;
 import com.matrixcode.modelgateway.domain.ModelProvider;
+import com.matrixcode.modelgateway.domain.ModelRequestRuntimeOptions;
 import com.matrixcode.modelgateway.domain.ModelRole;
 import com.matrixcode.modelgateway.domain.PromptContract;
 import com.matrixcode.modelgateway.domain.RoleModelBinding;
@@ -93,6 +94,26 @@ class OpenAiCompatibleModelClientTest {
 
         assertThat(objectMapper.readTree(httpClient.requestBody()).path("user_id").asText())
                 .isEqualTo("matrixcode_demo_DEVELOPER_deepseek_deepseek-chat");
+    }
+
+    @Test
+    void DeepSeek显式推理力度会写入请求体() throws Exception {
+        var httpClient = new CapturingHttpClient();
+        var client = new OpenAiCompatibleModelClient(
+                httpClient,
+                objectMapper
+        );
+
+        client.complete(
+                provider("deepseek"),
+                binding("deepseek", "deepseek-v4-pro"),
+                contract(),
+                "只回答 ok",
+                "matrixcode_demo_DEVELOPER_deepseek_deepseek-v4-pro",
+                new ModelRequestRuntimeOptions("", "", "auto", "max", true, false, true)
+        );
+
+        assertThat(objectMapper.readTree(httpClient.requestBody()).path("reasoning_effort").asText()).isEqualTo("max");
     }
 
     @Test
