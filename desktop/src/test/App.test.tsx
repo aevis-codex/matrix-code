@@ -1112,6 +1112,12 @@ describe('MatrixCode 桌面工作台', () => {
     return within(await screen.findByRole('dialog', { name: '运行中心' }));
   }
 
+  async function 打开角色工作流() {
+    expect(await screen.findByText('支付系统重构')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '工作流' }));
+    return within(await screen.findByRole('dialog', { name: '角色工作流' }));
+  }
+
   beforeEach(() => {
     vi.resetAllMocks();
     window.localStorage.clear();
@@ -1502,6 +1508,11 @@ describe('MatrixCode 桌面工作台', () => {
     expect(screen.getByLabelText('上线，待处理')).toBeTruthy();
     expect(screen.getByLabelText('大模型输出台')).toBeTruthy();
     expect(screen.getByLabelText('大模型对话台')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '工作流' })).toBeTruthy();
+    expect(screen.queryByLabelText('产品工作区')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '工作流' }));
+    expect(await screen.findByRole('dialog', { name: '角色工作流' })).toBeTruthy();
+    expect(screen.getByLabelText('产品工作区')).toBeTruthy();
     expect(screen.getByLabelText('输出与预览')).toBeTruthy();
     expect(screen.queryByRole('complementary', { name: '运行指标' })).toBeNull();
     const 底部状态栏 = within(screen.getByLabelText('工作台底部状态'));
@@ -2895,6 +2906,7 @@ describe('MatrixCode 桌面工作台', () => {
       .mockResolvedValueOnce(冻结后工作台);
 
     render(<App />);
+    await 打开角色工作流();
 
     fireEvent.change(await screen.findByLabelText('产品需求'), {
       target: { value: '支付失败后允许用户重新发起支付。' }
@@ -2906,10 +2918,12 @@ describe('MatrixCode 桌面工作台', () => {
       { requirement: '支付失败后允许用户重新发起支付。' },
       'user-product'
     );
+    fireEvent.click(screen.getByLabelText('关闭角色工作流'));
     fireEvent.click(await screen.findByRole('tab', { name: '文件' }));
     const 文档交接 = within(await screen.findByLabelText('文档交接'));
     expect(await 文档交接.findByText('产品需求草稿')).toBeTruthy();
 
+    await 打开角色工作流();
     fireEvent.click(screen.getByRole('button', { name: '冻结当前 PRD' }));
 
     expect(冻结文档).toHaveBeenCalledWith('demo', 'prd-1', 'user-product');
@@ -2920,6 +2934,7 @@ describe('MatrixCode 桌面工作台', () => {
     加载项目工作台.mockResolvedValueOnce(多轮草稿工作台).mockResolvedValueOnce(冻结后工作台);
 
     render(<App />);
+    await 打开角色工作流();
 
     expect(await screen.findByText('待冻结文档：产品需求草稿')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '冻结当前 PRD' }));
@@ -2931,6 +2946,7 @@ describe('MatrixCode 桌面工作台', () => {
     加载项目工作台.mockResolvedValueOnce(测试通过后工作台).mockResolvedValueOnce(测试通过后工作台);
 
     render(<App />);
+    await 打开角色工作流();
 
     fireEvent.change(await screen.findByLabelText('验收备注'), { target: { value: '验收通过，可以发布。' } });
     fireEvent.click(screen.getByRole('button', { name: '验收通过' }));
@@ -2962,13 +2978,21 @@ describe('MatrixCode 桌面工作台', () => {
     render(<App />);
 
     const 角色工作区 = within(await screen.findByRole('navigation', { name: '角色工作区' }));
+    await 打开角色工作流();
+    expect(screen.getByLabelText('产品工作区')).toBeTruthy();
+    fireEvent.click(screen.getByLabelText('关闭角色工作流'));
     fireEvent.click(角色工作区.getByRole('button', { name: '开发' }));
+    await 打开角色工作流();
     expect(screen.getByLabelText('本地工作区路径')).toBeTruthy();
 
+    fireEvent.click(screen.getByLabelText('关闭角色工作流'));
     fireEvent.click(角色工作区.getByRole('button', { name: '测试' }));
+    await 打开角色工作流();
     expect(screen.getByLabelText(/缺陷标题（Bug 标题）/)).toBeTruthy();
 
+    fireEvent.click(screen.getByLabelText('关闭角色工作流'));
     fireEvent.click(角色工作区.getByRole('button', { name: '运维' }));
+    await 打开角色工作流();
     expect(screen.getByLabelText(/服务器地址（SSH 地址）/)).toBeTruthy();
   });
 
@@ -2976,6 +3000,7 @@ describe('MatrixCode 桌面工作台', () => {
     生成需求草稿.mockRejectedValueOnce(new Error('产品需求不能为空'));
 
     render(<App />);
+    await 打开角色工作流();
 
     fireEvent.change(await screen.findByLabelText('产品需求'), {
       target: { value: '支付失败后允许用户重新发起支付。' }
@@ -2992,6 +3017,7 @@ describe('MatrixCode 桌面工作台', () => {
 
     const 角色工作区 = within(await screen.findByRole('navigation', { name: '角色工作区' }));
     fireEvent.click(角色工作区.getByRole('button', { name: '开发' }));
+    await 打开角色工作流();
 
     const 提交按钮 = screen.getByRole('button', { name: '提交开发交付' }) as HTMLButtonElement;
     expect(提交按钮.disabled).toBe(true);
@@ -3026,6 +3052,7 @@ describe('MatrixCode 桌面工作台', () => {
 
     const 角色工作区 = within(await screen.findByRole('navigation', { name: '角色工作区' }));
     fireEvent.click(角色工作区.getByRole('button', { name: '开发' }));
+    await 打开角色工作流();
 
     fireEvent.change(screen.getByLabelText('执行目标'), {
       target: { value: '修复支付失败重试' }
@@ -3076,6 +3103,7 @@ describe('MatrixCode 桌面工作台', () => {
 
     const 角色工作区 = within(await screen.findByRole('navigation', { name: '角色工作区' }));
     fireEvent.click(角色工作区.getByRole('button', { name: '开发' }));
+    await 打开角色工作流();
     fireEvent.change(screen.getByLabelText('执行目标'), {
       target: { value: '验证最近工作区默认选择' }
     });
@@ -3096,6 +3124,7 @@ describe('MatrixCode 桌面工作台', () => {
 
     const 角色工作区 = within(await screen.findByRole('navigation', { name: '角色工作区' }));
     fireEvent.click(角色工作区.getByRole('button', { name: '开发' }));
+    await 打开角色工作流();
     fireEvent.change(screen.getByLabelText('Patch 相对路径'), {
       target: { value: 'src/App.java' }
     });
@@ -3132,6 +3161,7 @@ describe('MatrixCode 桌面工作台', () => {
 
     const 角色工作区 = within(await screen.findByRole('navigation', { name: '角色工作区' }));
     fireEvent.click(角色工作区.getByRole('button', { name: '开发' }));
+    await 打开角色工作流();
     fireEvent.change(screen.getByLabelText('执行目标'), {
       target: { value: '修复支付失败重试' }
     });
@@ -3182,6 +3212,7 @@ describe('MatrixCode 桌面工作台', () => {
 
     const 角色工作区 = within(await screen.findByRole('navigation', { name: '角色工作区' }));
     fireEvent.click(角色工作区.getByRole('button', { name: '测试' }));
+    await 打开角色工作流();
 
     const 缺陷内容 = {
       title: '支付失败后没有重试按钮',
@@ -3238,6 +3269,7 @@ describe('MatrixCode 桌面工作台', () => {
 
     const 角色工作区 = within(await screen.findByRole('navigation', { name: '角色工作区' }));
     fireEvent.click(角色工作区.getByRole('button', { name: '测试' }));
+    await 打开角色工作流();
 
     fireEvent.change(screen.getByLabelText('目标状态'), { target: { value: 'CLOSED' } });
     fireEvent.change(screen.getByLabelText('流转备注'), { target: { value: '回归通过，关闭缺陷。' } });
@@ -3257,6 +3289,7 @@ describe('MatrixCode 桌面工作台', () => {
 
     const 角色工作区 = within(await screen.findByRole('navigation', { name: '角色工作区' }));
     fireEvent.click(角色工作区.getByRole('button', { name: '运维' }));
+    await 打开角色工作流();
 
     fireEvent.change(screen.getByLabelText('环境名称'), { target: { value: '预发环境' } });
     fireEvent.change(screen.getByLabelText('环境地址'), { target: { value: 'https://pre.example.com' } });
@@ -3283,6 +3316,7 @@ describe('MatrixCode 桌面工作台', () => {
 
     const 角色工作区 = within(await screen.findByRole('navigation', { name: '角色工作区' }));
     fireEvent.click(角色工作区.getByRole('button', { name: '运维' }));
+    await 打开角色工作流();
 
     fireEvent.click(screen.getByRole('button', { name: '运行健康检查' }));
     await waitFor(() =>
@@ -3320,6 +3354,7 @@ describe('MatrixCode 桌面工作台', () => {
 
     const 角色工作区 = within(await screen.findByRole('navigation', { name: '角色工作区' }));
     fireEvent.click(角色工作区.getByRole('button', { name: '运维' }));
+    await 打开角色工作流();
 
     expect(await screen.findByText('Compose 演示环境')).toBeTruthy();
     fireEvent.change(screen.getByLabelText('Compose 文件'), { target: { value: 'compose.yml' } });
@@ -3387,6 +3422,7 @@ describe('MatrixCode 桌面工作台', () => {
       .mockRejectedValueOnce(new Error('团队服务器连接失败'));
 
     render(<App />);
+    await 打开角色工作流();
 
     fireEvent.change(await screen.findByLabelText('产品需求'), {
       target: { value: '支付失败后允许用户重新发起支付。' }
@@ -3407,6 +3443,7 @@ describe('MatrixCode 桌面工作台', () => {
 
     const 角色工作区 = within(await screen.findByRole('navigation', { name: '角色工作区' }));
     fireEvent.click(角色工作区.getByRole('button', { name: '开发' }));
+    await 打开角色工作流();
 
     const 完整交付 = {
       workspacePath: '/tmp/matrixcode',

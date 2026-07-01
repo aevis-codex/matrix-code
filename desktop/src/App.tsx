@@ -1258,6 +1258,7 @@ function App() {
   const [documentCenterOpen, setDocumentCenterOpen] = useState(false);
   const [runtimeDiagnosticsOpen, setRuntimeDiagnosticsOpen] = useState(false);
   const [operationsCenterOpen, setOperationsCenterOpen] = useState(false);
+  const [workflowPanelOpen, setWorkflowPanelOpen] = useState(false);
   const [contextPanelTab, setContextPanelTab] = useState<WorkspaceContextTab>('overview');
   const [selectedActorUserId, setSelectedActorUserId] = useState<string | null>(() => readStoredActorUserId());
   const [loginUsername, setLoginUsername] = useState(() => readStoredActorUserId() ?? 'admin');
@@ -2010,6 +2011,52 @@ function App() {
   const modelOptions = readyModelRefs.length ? readyModelRefs : uniqueModelRefs([formatModelBindingRef(workbench.modelGateway.bindings[0])]);
   const currentComposerModelRef = composerModelRef || modelOptions[0];
   const composerSubmitting = composerSubmitState.status === 'sending' || composerSubmitState.status === 'streaming';
+  const roleWorkflowPanel = (
+    <>
+      {selectedRole === '产品' ? (
+        <ProductPanel
+          documents={workbench.documents}
+          onCreateDrafts={handleCreateProductDrafts}
+          onFreezeDocument={handleFreezeDocument}
+          onSubmitAcceptance={handleSubmitAcceptance}
+        />
+      ) : null}
+      {selectedRole === '开发' ? (
+        <DeveloperPanel
+          workspaces={workbench.localExecution.workspaces}
+          onPrepareExecution={handlePrepareCodingAgentExecution}
+          onApplyPatch={handleApplyCodingAgentPatch}
+          onRecordHandoff={handleRecordCodingAgentHandoff}
+          onSubmitDelivery={handleSubmitDeveloperDelivery}
+        />
+      ) : null}
+      {selectedRole === '测试' ? (
+        <TesterPanel
+          bugs={workbench.bugs}
+          onCreateBug={handleCreateBug}
+          onSubmitReport={handleSubmitTestReport}
+          onTransitionBug={handleTransitionBug}
+        />
+      ) : null}
+      {selectedRole === '运维' ? (
+        <OpsPanel
+          workspaces={workbench.localExecution.workspaces}
+          deploymentTargets={workbench.deploymentTargets}
+          deploymentRuntimeSummaries={workbench.deploymentRuntimeSummaries}
+          composeEnvironments={workbench.composeEnvironments}
+          composeRuntimeViews={workbench.composeRuntimeViews}
+          onConfigureTarget={handleConfigureDeploymentTarget}
+          onRunHealthCheck={handleRunDeploymentHealthCheck}
+          onRecordDeploymentOperation={handleRecordDeploymentOperation}
+          onConfigureComposeEnvironment={handleConfigureComposeEnvironment}
+          onValidateComposeEnvironment={handleValidateComposeEnvironment}
+          onStartComposeEnvironment={handleStartComposeEnvironment}
+          onStopComposeEnvironment={handleStopComposeEnvironment}
+          onCaptureComposeLogs={handleCaptureComposeLogs}
+        />
+      ) : null}
+    </>
+  );
 
   return (
     <main className="workspace">
@@ -2081,6 +2128,13 @@ function App() {
             >
               运行
             </button>
+            <button
+              className="secondary-button config-button"
+              onClick={() => setWorkflowPanelOpen(true)}
+              type="button"
+            >
+              工作流
+            </button>
             <button className="secondary-button config-button" onClick={() => setConfigDialogOpen(true)} type="button">
               配置
             </button>
@@ -2144,57 +2198,13 @@ function App() {
           selectedRole={selectedRole}
         />
 
-        <section className="agent-dialog-console" aria-label="大模型对话台">
+        <section className="agent-dialog-console agent-dialog-console--composer" aria-label="大模型对话台">
           <div className="agent-dialog-console__header">
             <div>
               <p className="eyebrow">大模型对话台</p>
-              <h3>{selectedRole}工作台</h3>
+              <h3>{selectedRole}智能体</h3>
             </div>
-            <span>输入、执行和交接</span>
-          </div>
-          <div className="active-panel-slot">
-            {selectedRole === '产品' ? (
-              <ProductPanel
-                documents={workbench.documents}
-                onCreateDrafts={handleCreateProductDrafts}
-                onFreezeDocument={handleFreezeDocument}
-                onSubmitAcceptance={handleSubmitAcceptance}
-              />
-            ) : null}
-            {selectedRole === '开发' ? (
-              <DeveloperPanel
-                workspaces={workbench.localExecution.workspaces}
-                onPrepareExecution={handlePrepareCodingAgentExecution}
-                onApplyPatch={handleApplyCodingAgentPatch}
-                onRecordHandoff={handleRecordCodingAgentHandoff}
-                onSubmitDelivery={handleSubmitDeveloperDelivery}
-              />
-            ) : null}
-            {selectedRole === '测试' ? (
-              <TesterPanel
-                bugs={workbench.bugs}
-                onCreateBug={handleCreateBug}
-                onSubmitReport={handleSubmitTestReport}
-                onTransitionBug={handleTransitionBug}
-              />
-            ) : null}
-            {selectedRole === '运维' ? (
-              <OpsPanel
-                workspaces={workbench.localExecution.workspaces}
-                deploymentTargets={workbench.deploymentTargets}
-                deploymentRuntimeSummaries={workbench.deploymentRuntimeSummaries}
-                composeEnvironments={workbench.composeEnvironments}
-                composeRuntimeViews={workbench.composeRuntimeViews}
-                onConfigureTarget={handleConfigureDeploymentTarget}
-                onRunHealthCheck={handleRunDeploymentHealthCheck}
-                onRecordDeploymentOperation={handleRecordDeploymentOperation}
-                onConfigureComposeEnvironment={handleConfigureComposeEnvironment}
-                onValidateComposeEnvironment={handleValidateComposeEnvironment}
-                onStartComposeEnvironment={handleStartComposeEnvironment}
-                onStopComposeEnvironment={handleStopComposeEnvironment}
-                onCaptureComposeLogs={handleCaptureComposeLogs}
-              />
-            ) : null}
+            <span>{currentComposerModelRef}</span>
           </div>
           <AgentComposer
             approvalMode={composerApprovalMode}
@@ -2224,6 +2234,27 @@ function App() {
         modelGateway={workbench.modelGateway}
         runtimeNotificationUnreadCount={unreadRuntimeNotificationCount}
       />
+      {workflowPanelOpen ? (
+        <div className="config-dialog-backdrop">
+          <section aria-label="角色工作流" className="config-dialog workflow-dialog" role="dialog">
+            <header className="config-dialog__header">
+              <div>
+                <p className="eyebrow">角色工作流</p>
+                <h2>{selectedRole}工作台</h2>
+              </div>
+              <button
+                aria-label="关闭角色工作流"
+                className="config-dialog__close"
+                onClick={() => setWorkflowPanelOpen(false)}
+                type="button"
+              >
+                ×
+              </button>
+            </header>
+            <div className="workflow-dialog__body">{roleWorkflowPanel}</div>
+          </section>
+        </div>
+      ) : null}
       <RoleAgentConfigDialog
         actorUserId={currentActorId}
         configs={roleAgentConfigs}
