@@ -2167,7 +2167,7 @@ describe('MatrixCode 桌面工作台', () => {
 
     render(<App />);
 
-    expect(await screen.findByText('需要登录 MatrixCode')).toBeTruthy();
+    expect(await screen.findByText('欢迎使用 Matrix 智能平台')).toBeTruthy();
     fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'admin-secret' } });
     fireEvent.click(screen.getByRole('button', { name: '登录并加载工作台' }));
 
@@ -2882,7 +2882,7 @@ describe('MatrixCode 桌面工作台', () => {
 
     render(<App />);
 
-    expect(await screen.findByText('需要登录 MatrixCode')).toBeTruthy();
+    expect(await screen.findByText('欢迎使用 Matrix 智能平台')).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'user-dev' } });
     expect(screen.queryByLabelText('登录有效期')).toBeNull();

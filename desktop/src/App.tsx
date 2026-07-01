@@ -1948,10 +1948,9 @@ function App() {
     return (
       <main className="loading">
         <section className="loading__panel" aria-label="连接错误">
-          <strong>{workbenchState.message}</strong>
+          <strong>{authRequired ? '欢迎使用 Matrix 智能平台' : workbenchState.message}</strong>
           {authRequired ? (
             <>
-              <p className="loading__message">当前后端已启用 Sa-Token，请使用用户名和密码登录。</p>
               <form aria-label="本地登录" className="auth-login-form" onSubmit={handleLoginFromErrorPage}>
                 <label className="auth-login-form__field">
                   <span>用户名</span>
