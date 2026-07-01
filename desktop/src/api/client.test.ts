@@ -1408,6 +1408,100 @@ describe('角色工作台 API 客户端', () => {
     expect(response).toEqual(completedResponse);
   });
 
+  it('流式模型接口不存在时降级到普通模型请求', async () => {
+    const completedResponse = {
+      requestId: 'fallback-request-1',
+      answer: '普通模型请求结果',
+      contextManifest: {
+        role: 'PRODUCT',
+        blocks: [],
+        omittedTypes: []
+      },
+      usage: {
+        roleSessionId: 'demo:PRODUCT',
+        model: 'qwen-plus',
+        cacheHitTokens: 0,
+        cacheMissInputTokens: 12,
+        outputTokens: 6,
+        cacheHitRate: 0,
+        estimatedCost: 0.001,
+        currency: 'CNY'
+      },
+      binding: {
+        projectId: 'demo',
+        role: 'PRODUCT',
+        providerId: 'qwen',
+        model: 'qwen-plus',
+        currency: 'CNY',
+        cacheHitPerMillion: 0,
+        cacheMissInputPerMillion: 0,
+        outputPerMillion: 0,
+        contextBudgetTokens: 32000,
+        toolContractVersion: 'tools-v1'
+      },
+      promptContract: {
+        role: 'PRODUCT',
+        model: 'qwen-plus',
+        toolContractVersion: 'tools-v1',
+        systemPrefix: 'stable prefix',
+        stablePrefixHash: 'fp-cache-001',
+        estimatedStablePrefixTokens: 128
+      },
+      createdAt: '2026-07-01T09:00:00Z'
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+        json: async () => {
+          throw new Error('no json');
+        }
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => completedResponse
+      });
+    vi.stubGlobal('fetch', fetchMock);
+    const input = {
+      actorUserId: 'user-product',
+      instruction: '支付失败后允许用户重新发起支付。',
+      contextBlocks: []
+    };
+    const chunks: string[] = [];
+
+    const response = await createRoleModelRequestStream(
+      'demo',
+      'product',
+      input,
+      (delta) => chunks.push(delta),
+      'user-product',
+      'http://localhost:8080'
+    );
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, 'http://localhost:8080/api/projects/demo/roles/product/model-requests/stream', {
+      method: 'POST',
+      headers: {
+        Accept: 'text/event-stream',
+        'Content-Type': 'application/json',
+        'X-MatrixCode-User-Id': 'user-product'
+      },
+      body: JSON.stringify(input)
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, 'http://localhost:8080/api/projects/demo/roles/product/model-requests', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'X-MatrixCode-User-Id': 'user-product'
+      },
+      body: JSON.stringify(input)
+    });
+    expect(chunks).toEqual(['普通模型请求结果']);
+    expect(response).toEqual(completedResponse);
+  });
+
   it('按 Agent 运行读取模型请求分页和成本趋势', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

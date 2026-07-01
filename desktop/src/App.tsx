@@ -746,6 +746,8 @@ function AgentOutputConsole({
                 ? '模型回复'
                 : composerSubmitState.status === 'streaming'
                   ? '模型流式回复'
+                  : composerSubmitState.status === 'error'
+                    ? '请求失败'
                   : '实时上下文预览'}
             </strong>
             <span>{currentModelRef}</span>

@@ -1764,6 +1764,13 @@ export async function createRoleModelRequestStream(
   }
 
   if (!response.ok) {
+    if (response.status === 404) {
+      const fallbackResponse = await createRoleModelRequest(projectId, role, input, actorUserIdOrServerUrl, serverUrl);
+      if (fallbackResponse.answer.trim()) {
+        onDelta(fallbackResponse.answer);
+      }
+      return fallbackResponse;
+    }
     throw new Error(await responseErrorMessage(response));
   }
   if (!response.body) {

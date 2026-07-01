@@ -1700,6 +1700,23 @@ describe('MatrixCode 桌面工作台', () => {
     });
   });
 
+  it('底部Composer模型请求失败时输出台标题显示请求失败', async () => {
+    创建角色模型流式请求.mockRejectedValueOnce(new Error('团队服务器请求失败：404'));
+
+    render(<App />);
+
+    expect(await screen.findByText('支付系统重构')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Agent 对话输入'), {
+      target: { value: '请输出实时计划' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '发送给角色智能体' }));
+
+    const 输出台 = within(await screen.findByLabelText('实时输出预览'));
+    expect(await 输出台.findByText('请求失败')).toBeTruthy();
+    expect(输出台.queryByText('实时上下文预览')).toBeNull();
+    expect(输出台.getByText('团队服务器请求失败：404')).toBeTruthy();
+  });
+
   it('模型长回复默认摘要展示并支持展开全文', async () => {
     const 长回复 = `第一行结论。${'需要压缩展示的详细推理内容。'.repeat(80)}最后一句只应在展开后完整出现。`;
     创建角色模型流式请求.mockResolvedValueOnce({
