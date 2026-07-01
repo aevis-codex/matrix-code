@@ -70,6 +70,35 @@ class ApprovalPolicyTest {
     }
 
     @Test
+    void 问询模式会把原本可自动执行的安全命令降级为人工确认() {
+        var action = new ToolAction(
+                "task-1",
+                "user-dev",
+                "SHELL",
+                "/Users/Masons/Ai/Maven/bin/mvn -Dmaven.repo.local=/Users/Masons/Ai/Maven_Ai_Store test",
+                "/repo/payment",
+                false
+        );
+
+        assertThat(policy.decide(action, "ask")).isEqualTo(ApprovalDecision.ASK);
+    }
+
+    @Test
+    void Yolo模式只放行非危险本地Shell命令且不会绕过危险和远程动作() {
+        var ordinaryShell = new ToolAction("task-1", "user-dev", "SHELL", "npm run lint", "/repo/payment", false);
+        var dangerousShell = new ToolAction("task-2", "user-dev", "SHELL", "rm -rf build", "/repo/payment", true);
+        var sshAction = new ToolAction("task-3", "user-ops", "SSH", "systemctl restart payment", "/repo/payment", false);
+        var invalidAction = new ToolAction("task-4", "user-dev", "SHELL", "  ", "/repo/payment", false);
+        var unmarkedDestructiveShell = new ToolAction("task-5", "user-dev", "SHELL", "rm -rf build", "/repo/payment", false);
+
+        assertThat(policy.decide(ordinaryShell, "yolo")).isEqualTo(ApprovalDecision.ALLOW);
+        assertThat(policy.decide(dangerousShell, "yolo")).isEqualTo(ApprovalDecision.ASK);
+        assertThat(policy.decide(sshAction, "yolo")).isEqualTo(ApprovalDecision.ASK);
+        assertThat(policy.decide(invalidAction, "yolo")).isEqualTo(ApprovalDecision.DENY);
+        assertThat(policy.decide(unmarkedDestructiveShell, "yolo")).isEqualTo(ApprovalDecision.ASK);
+    }
+
+    @Test
     void 删除动作必须人工确认() {
         var commands = List.of(
                 "rm file",

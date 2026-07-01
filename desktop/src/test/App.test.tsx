@@ -1570,8 +1570,11 @@ describe('MatrixCode 桌面工作台', () => {
     );
     const requestInput = 创建角色模型流式请求.mock.calls.at(-1)?.[2];
     expect(requestInput?.contextBlocks).toEqual(
+      [expect.objectContaining({ type: 'WORKBENCH_STAGE' })]
+    );
+    expect(requestInput?.contextBlocks).not.toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ type: 'WORKBENCH_STAGE' }),
+        expect.objectContaining({ type: 'RECENT_DOCUMENTS' }),
         expect.objectContaining({ type: 'RECENT_EVENTS' })
       ])
     );

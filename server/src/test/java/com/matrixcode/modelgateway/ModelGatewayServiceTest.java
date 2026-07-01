@@ -5,6 +5,7 @@ import com.matrixcode.agentruntime.application.AgentRuntimeRepository;
 import com.matrixcode.agentruntime.application.AgentRuntimeService;
 import com.matrixcode.agentruntime.domain.AgentRunEventRecord;
 import com.matrixcode.agentruntime.domain.AgentRunRecord;
+import com.matrixcode.agentruntime.domain.AgentRunStatus;
 import com.matrixcode.agent.application.LocalProductDraftAgent;
 import com.matrixcode.context.application.ContextEngine;
 import com.matrixcode.context.domain.ContextBlock;
@@ -20,6 +21,7 @@ import com.matrixcode.modelgateway.domain.ModelCompletionResult;
 import com.matrixcode.modelgateway.domain.ModelProtocol;
 import com.matrixcode.modelgateway.domain.ModelProvider;
 import com.matrixcode.modelgateway.domain.ModelRequestCommand;
+import com.matrixcode.modelgateway.domain.ModelRequestRuntimeOptions;
 import com.matrixcode.modelgateway.domain.ModelRole;
 import com.matrixcode.modelgateway.domain.PromptContract;
 import com.matrixcode.modelgateway.domain.ProviderTokenUsage;
@@ -147,6 +149,54 @@ class ModelGatewayServiceTest {
             assertThat(event.eventPayload()).contains("\"stablePrefixHash\":\"%s\"".formatted(response.usage().stablePrefixHash()));
             assertThat(event.eventPayload()).contains("\"cachePolicyId\":\"stable-platform-prefix-v1\"");
             assertThat(event.eventPayload()).contains("\"volatileSuffixStrategy\":\"role-prompt-and-dynamic-context\"");
+        });
+    }
+
+    @Test
+    void 目标模式会登记Agent运行并关联模型请求Trace() {
+        var runtimeRepository = new RecordingAgentRuntimeRepository();
+        var runtimeService = new AgentRuntimeService(Optional.of(runtimeRepository), new ObjectMapper(), java.time.Clock.systemUTC());
+        var gateway = new ModelGatewayService(
+                providers,
+                bindings,
+                new PromptContractBuilder(),
+                new PromptCacheEstimator(),
+                new UsageCalculator(),
+                new ContextEngine(),
+                List.of(new DeterministicModelAdapter(new LocalProductDraftAgent())),
+                events,
+                roleAgentConfigs,
+                store,
+                Optional.of(runtimeService)
+        );
+
+        var response = gateway.request(new ModelRequestCommand(
+                "demo",
+                ModelRole.DEVELOPER,
+                "user-dev",
+                "",
+                "持续推进登录权限完善",
+                List.of(),
+                new ModelRequestRuntimeOptions("", "", "auto", "max", false, true, false)
+        ));
+
+        assertThat(runtimeRepository.savedRuns).singleElement().satisfies(run -> {
+            assertThat(run.status()).isEqualTo(AgentRunStatus.QUEUED);
+            assertThat(run.projectId()).isEqualTo("demo");
+            assertThat(run.roleKey()).isEqualTo(ModelRole.DEVELOPER.name());
+            assertThat(run.actorUserId()).isEqualTo("user-dev");
+            assertThat(run.goal()).isEqualTo("持续推进登录权限完善");
+            assertThat(run.summary()).contains("目标模式");
+        });
+        var runId = runtimeRepository.savedRuns.getFirst().id();
+        assertThat(gateway.recentRequests("demo")).last().satisfies(record -> {
+            assertThat(record.requestId()).isEqualTo(response.requestId());
+            assertThat(record.agentRunId()).isEqualTo(runId);
+        });
+        assertThat(runtimeRepository.events).singleElement().satisfies(event -> {
+            assertThat(event.runId()).isEqualTo(runId);
+            assertThat(event.eventType()).isEqualTo("TOOL_TRACE");
+            assertThat(event.eventPayload()).contains("\"referenceId\":\"%s\"".formatted(response.requestId()));
         });
     }
 
@@ -690,6 +740,49 @@ class ModelGatewayServiceTest {
                 .containsExactly("PROJECT_RULE", "VECTOR_CONTEXT");
         assertThat(response.contextManifest().blocks()).extracting(ContextBlock::summary)
                 .anySatisfy(summary -> assertThat(summary).contains("部署步骤必须包含回滚说明"));
+    }
+
+    @Test
+    void 省Token模式会裁剪动态上下文并跳过向量召回() {
+        var vectorContext = new VectorContextRetriever() {
+            @Override
+            public List<ContextBlock> recall(String projectId, ModelRole role, String instruction) {
+                throw new AssertionError("省 token 模式不应执行动态向量召回");
+            }
+        };
+        var gateway = new ModelGatewayService(
+                providers,
+                bindings,
+                new PromptContractBuilder(),
+                new PromptCacheEstimator(),
+                new UsageCalculator(),
+                new ContextEngine(),
+                List.of(new DeterministicModelAdapter(new LocalProductDraftAgent())),
+                events,
+                roleAgentConfigs,
+                vectorContext,
+                store
+        );
+
+        var response = gateway.request(new ModelRequestCommand(
+                "demo",
+                ModelRole.DEVELOPER,
+                "user-dev",
+                "",
+                "生成交接文档",
+                List.of(
+                        new ContextBlock("WORKBENCH_STAGE", "当前阶段：开发中", true),
+                        new ContextBlock("RECENT_DOCUMENTS", "最近文档很多", true),
+                        new ContextBlock("RECENT_EVENTS", "最近事件很多", true),
+                        new ContextBlock("PROJECT_RULE", "保持中文输出", true)
+                ),
+                new ModelRequestRuntimeOptions("", "", "auto", "auto", false, false, true)
+        ));
+
+        assertThat(response.contextManifest().blocks()).extracting(ContextBlock::type)
+                .containsExactly("WORKBENCH_STAGE", "PROJECT_RULE", "COMPOSER_RUNTIME");
+        assertThat(response.contextManifest().blocks()).extracting(ContextBlock::summary)
+                .anySatisfy(summary -> assertThat(summary).contains("协作方式：省 token"));
     }
 
     private ModelGatewayService gateway(

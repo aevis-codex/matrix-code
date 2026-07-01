@@ -82,6 +82,40 @@ public record ModelRequestRuntimeOptions(
     }
 
     /**
+     * 判断是否允许注入会快速变化的动态上下文。
+     */
+    public boolean dynamicContextAllowed() {
+        return !tokenEconomy;
+    }
+
+    /**
+     * 构建模型指令中的执行策略补充。
+     */
+    public String instructionPolicy() {
+        var policyParts = new java.util.ArrayList<String>();
+        if (planMode) {
+            policyParts.add("计划模式：只输出分析、风险、步骤和待确认项，不生成已执行结论，不要求写入文件或执行命令");
+        }
+        if (goalMode) {
+            policyParts.add("目标模式：围绕用户目标给出可持续推进的下一步、验收点和阻塞项");
+        }
+        if (tokenEconomy) {
+            policyParts.add("省 token：优先复用稳定系统前缀，只依赖必要阶段信息，不展开最近文档、事件和向量召回明细");
+        }
+        policyParts.add("工具权限：" + switch (approvalMode) {
+            case "ask" -> "任何工具、写入或命令动作都必须先请求人工确认";
+            case "yolo" -> "允许非危险本地 Shell 动作自动推进，但危险、远程、写入和凭据相关动作仍需人工确认";
+            default -> "可自动执行已被系统判定为安全的动作，其他动作请求人工确认";
+        });
+        policyParts.add("推理力度：" + switch (reasoningEffort) {
+            case "high" -> "提高推理深度，保留关键取舍";
+            case "max" -> "使用最高推理深度，先完整检查依赖、风险和验证路径";
+            default -> "使用供应商默认推理力度";
+        });
+        return String.join("；", policyParts);
+    }
+
+    /**
      * 返回供应商请求参数可使用的推理力度；auto 表示不显式覆盖供应商默认值。
      */
     public Optional<String> explicitReasoningEffort() {

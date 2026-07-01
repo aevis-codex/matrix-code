@@ -1,6 +1,7 @@
 package com.matrixcode.modelgateway.application;
 
 import com.matrixcode.agentruntime.application.AgentRuntimeService;
+import com.matrixcode.agentruntime.domain.AgentRunStatus;
 import com.matrixcode.context.application.ContextEngine;
 import com.matrixcode.modelgateway.domain.ModelCompletionResult;
 import com.matrixcode.modelgateway.domain.ModelCostBreakdown;
@@ -12,6 +13,7 @@ import com.matrixcode.modelgateway.domain.ModelCostTrendPoint;
 import com.matrixcode.modelgateway.domain.ModelCostTrendReport;
 import com.matrixcode.modelgateway.domain.ModelRequestCommand;
 import com.matrixcode.modelgateway.domain.ModelRequestRecord;
+import com.matrixcode.modelgateway.domain.ModelRequestRuntimeOptions;
 import com.matrixcode.modelgateway.domain.ModelRunRequestPage;
 import com.matrixcode.modelgateway.domain.ModelResponse;
 import com.matrixcode.modelgateway.domain.ModelRole;
@@ -41,6 +43,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -50,6 +53,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class ModelGatewayService {
+
+    private static final Set<String> TOKEN_ECONOMY_DYNAMIC_CONTEXT_TYPES = Set.of("RECENT_DOCUMENTS", "RECENT_EVENTS");
 
     private final ModelProviderRegistry providerRegistry;
     private final RoleModelBindingService bindingService;
@@ -332,21 +337,28 @@ public class ModelGatewayService {
         if (!provider.enabled()) {
             throw new IllegalArgumentException("模型供应商未启用：" + provider.id());
         }
+        var effectiveCommand = commandWithGoalRun(command, roleConfig, binding);
         var contract = promptContractBuilder.build(
-                command.role(),
+                effectiveCommand.role(),
                 binding.model(),
                 binding.toolContractVersion(),
                 roleConfig.systemPrompt()
         );
-        var contextBlocks = new java.util.ArrayList<>(command.contextBlocks());
-        command.runtimeOptions().composerContextBlock().ifPresent(contextBlocks::add);
-        contextBlocks.addAll(vectorContextRetriever.recall(command.projectId(), command.role(), command.instruction()));
-        var manifest = contextEngine.build(command.role().name(), contextBlocks);
-        var renderedInstruction = renderInstruction(roleConfig, command.instruction());
-        var roleSessionId = command.projectId() + ":" + command.role().name();
+        var contextBlocks = new java.util.ArrayList<>(contextBlocksForRuntime(effectiveCommand));
+        effectiveCommand.runtimeOptions().composerContextBlock().ifPresent(contextBlocks::add);
+        if (effectiveCommand.runtimeOptions().dynamicContextAllowed()) {
+            contextBlocks.addAll(vectorContextRetriever.recall(
+                    effectiveCommand.projectId(),
+                    effectiveCommand.role(),
+                    effectiveCommand.instruction()
+            ));
+        }
+        var manifest = contextEngine.build(effectiveCommand.role().name(), contextBlocks);
+        var renderedInstruction = renderInstruction(roleConfig, effectiveCommand.instruction(), effectiveCommand.runtimeOptions());
+        var roleSessionId = effectiveCommand.projectId() + ":" + effectiveCommand.role().name();
         var cacheScopeId = cacheScopeId(
-                command.projectId(),
-                command.role(),
+                effectiveCommand.projectId(),
+                effectiveCommand.role(),
                 binding.providerId(),
                 binding.model(),
                 roleConfig.cacheScopeStrategy()
@@ -359,7 +371,7 @@ public class ModelGatewayService {
                         contract,
                         renderedInstruction,
                         cacheScopeId,
-                        command.runtimeOptions()
+                        effectiveCommand.runtimeOptions()
                 )
                 : client.stream(
                         provider,
@@ -367,7 +379,7 @@ public class ModelGatewayService {
                         contract,
                         renderedInstruction,
                         cacheScopeId,
-                        command.runtimeOptions(),
+                        effectiveCommand.runtimeOptions(),
                         deltaConsumer
                 );
         var answer = completion.answer();
@@ -375,7 +387,7 @@ public class ModelGatewayService {
                 .map(block -> block.type())
                 .toList();
         var providerUsageAvailable = completion.usage().filter(ProviderTokenUsage::hasPromptCacheTokens).isPresent();
-        var estimate = promptEstimate(completion, cacheScopeId, contract, contextTypes, command.instruction(), answer);
+        var estimate = promptEstimate(completion, cacheScopeId, contract, contextTypes, effectiveCommand.instruction(), answer);
         var usage = usageCalculator.calculate(
                         roleSessionId,
                         new ModelPrice(
@@ -406,32 +418,72 @@ public class ModelGatewayService {
         var createdAt = Instant.now();
         var requestId = UUID.randomUUID().toString();
         var response = new ModelResponse(requestId, answer, manifest, usage, binding, contract, createdAt);
-        requests.computeIfAbsent(command.projectId(), ignored -> new CopyOnWriteArrayList<>())
+        requests.computeIfAbsent(effectiveCommand.projectId(), ignored -> new CopyOnWriteArrayList<>())
                 .add(new ModelRequestRecord(
                         requestId,
-                        command.projectId(),
-                        command.role(),
+                        effectiveCommand.projectId(),
+                        effectiveCommand.role(),
                         binding.providerId(),
                         binding.model(),
                         summarize(answer),
-                        command.actorUserId(),
-                        command.agentRunId(),
+                        effectiveCommand.actorUserId(),
+                        effectiveCommand.agentRunId(),
                         usage,
                         contextTypes,
                         createdAt
                 ));
         saveModelRequests();
-        appendModelRequestTrace(command, requestId, binding, usage);
+        appendModelRequestTrace(effectiveCommand, requestId, binding, usage);
         eventBus.publish(new ProjectEvent(
-                command.projectId(),
+                effectiveCommand.projectId(),
                 "MODEL_REQUEST_COMPLETED",
                 "%s使用%s完成模型请求，缓存命中率 %.0f%%".formatted(
-                        command.role().displayName(),
+                        effectiveCommand.role().displayName(),
                         binding.model(),
                         usage.cacheHitRate() * 100
                 )
         ));
         return response;
+    }
+
+    /**
+     * 在目标模式下创建可追踪的 Agent 运行，并把本次模型请求挂到生成的运行 ID。
+     *
+     * <p>作用域：模型网关到 Agent Runtime 的轻量衔接；场景：用户在 Composer 勾选“目标”但没有显式传入
+     * `agentRunId`。方法只登记 `QUEUED` 运行，不直接执行命令、写文件或应用 Patch；已有运行 ID 的调用保持原样，
+     * 避免 Worker 再次进入网关时重复创建运行。</p>
+     */
+    private ModelRequestCommand commandWithGoalRun(
+            ModelRequestCommand command,
+            RoleAgentConfig roleConfig,
+            RoleModelBinding binding
+    ) {
+        if (!command.runtimeOptions().goalMode() || !command.agentRunId().isBlank() || agentRuntimeService.isEmpty()) {
+            return command;
+        }
+        var run = agentRuntimeService.get().saveRun(
+                "",
+                command.projectId(),
+                command.role(),
+                roleConfig.agentKind(),
+                command.actorUserId(),
+                binding.providerId(),
+                binding.model(),
+                AgentRunStatus.QUEUED,
+                command.instruction(),
+                "目标模式已登记，等待受控 Worker 认领",
+                null,
+                null
+        );
+        return new ModelRequestCommand(
+                command.projectId(),
+                command.role(),
+                command.actorUserId(),
+                run.id(),
+                command.instruction(),
+                command.contextBlocks(),
+                command.runtimeOptions()
+        );
     }
 
     /**
@@ -722,6 +774,24 @@ public class ModelGatewayService {
             return template.replace("{{instruction}}", instruction);
         }
         return template.strip() + "\n\n" + instruction;
+    }
+
+    private String renderInstruction(RoleAgentConfig config, String instruction, ModelRequestRuntimeOptions runtimeOptions) {
+        var renderedInstruction = renderInstruction(config, instruction);
+        var policy = runtimeOptions.instructionPolicy();
+        if (policy.isBlank()) {
+            return renderedInstruction;
+        }
+        return renderedInstruction + "\n\n本轮执行策略：" + policy;
+    }
+
+    private List<com.matrixcode.context.domain.ContextBlock> contextBlocksForRuntime(ModelRequestCommand command) {
+        if (command.runtimeOptions().dynamicContextAllowed()) {
+            return command.contextBlocks();
+        }
+        return command.contextBlocks().stream()
+                .filter(block -> !TOKEN_ECONOMY_DYNAMIC_CONTEXT_TYPES.contains(block.type()))
+                .toList();
     }
 
     private ModelCompletionClient modelClient(com.matrixcode.modelgateway.domain.ModelProvider provider) {

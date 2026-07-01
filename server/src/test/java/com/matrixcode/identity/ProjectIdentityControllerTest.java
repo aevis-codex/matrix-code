@@ -54,6 +54,9 @@ class ProjectIdentityControllerTest {
             Path.of(System.getProperty("java.io.tmpdir"), "matrixcode-test-runtime-notifications-identity-api-" + System.nanoTime() + ".json");
     private static final Path WORKBENCH_STATE_STORAGE =
             Path.of(System.getProperty("java.io.tmpdir"), "matrixcode-test-workbench-state-identity-api-" + System.nanoTime() + ".json");
+    private static final String VALID_INVITATION_EXPIRES_AT = "2099-01-01T00:00:00Z";
+    private static final String REISSUED_INVITATION_EXPIRES_AT = "2099-01-02T00:00:00Z";
+    private static final String EXPIRED_INVITATION_EXPIRES_AT = "2000-01-01T00:00:00Z";
 
     @Autowired
     private MockMvc mockMvc;
@@ -223,8 +226,8 @@ class ProjectIdentityControllerTest {
                         .header(RequestActorResolver.CURRENT_USER_HEADER, "user-owner")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"userId":" user-dev ","displayName":"开发同学","roleKey":" developer ","expiresAt":"2026-07-01T00:00:00Z"}
-                                """))
+                                {"userId":" user-dev ","displayName":"开发同学","roleKey":" developer ","expiresAt":"%s"}
+                                """.formatted(VALID_INVITATION_EXPIRES_AT)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.token").isNotEmpty())
                 .andExpect(jsonPath("$.invitation.projectId").value("demo"))
@@ -263,8 +266,8 @@ class ProjectIdentityControllerTest {
                         .header(RequestActorResolver.CURRENT_USER_HEADER, "user-owner")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"userId":"user-dev","displayName":"开发同学","roleKey":"DEVELOPER","expiresAt":"2026-07-01T00:00:00Z"}
-                                """))
+                                {"userId":"user-dev","displayName":"开发同学","roleKey":"DEVELOPER","expiresAt":"%s"}
+                                """.formatted(VALID_INVITATION_EXPIRES_AT)))
                 .andExpect(status().isOk())
                 .andReturn();
         var invitationId = com.jayway.jsonpath.JsonPath.read(
@@ -290,12 +293,12 @@ class ProjectIdentityControllerTest {
                         .header(RequestActorResolver.CURRENT_USER_HEADER, "user-owner")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"expiresAt":"2026-07-02T00:00:00Z"}
-                                """))
+                                {"expiresAt":"%s"}
+                                """.formatted(REISSUED_INVITATION_EXPIRES_AT)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.token").isNotEmpty())
                 .andExpect(jsonPath("$.invitation.status").value("PENDING"))
-                .andExpect(jsonPath("$.invitation.expiresAt").value("2026-07-02T00:00:00Z"))
+                .andExpect(jsonPath("$.invitation.expiresAt").value(REISSUED_INVITATION_EXPIRES_AT))
                 .andReturn();
         var newToken = com.jayway.jsonpath.JsonPath.read(
                 reissued.getResponse().getContentAsString(),
@@ -311,8 +314,8 @@ class ProjectIdentityControllerTest {
                         .header(RequestActorResolver.CURRENT_USER_HEADER, "user-owner")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"userId":"user-expired","displayName":"过期成员","roleKey":"TESTER","expiresAt":"2026-01-01T00:00:00Z"}
-                                """))
+                                {"userId":"user-expired","displayName":"过期成员","roleKey":"TESTER","expiresAt":"%s"}
+                                """.formatted(EXPIRED_INVITATION_EXPIRES_AT)))
                 .andExpect(status().isOk());
 
         mockMvc.perform(post("/api/projects/demo/identity/invitations:expire")
@@ -331,8 +334,8 @@ class ProjectIdentityControllerTest {
                         .header(RequestActorResolver.CURRENT_USER_HEADER, "user-dev")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"userId":"user-new","displayName":"新成员","roleKey":"TESTER","expiresAt":"2026-07-01T00:00:00Z"}
-                                """))
+                                {"userId":"user-new","displayName":"新成员","roleKey":"TESTER","expiresAt":"%s"}
+                                """.formatted(VALID_INVITATION_EXPIRES_AT)))
                 .andExpect(status().isForbidden());
 
         mockMvc.perform(patch("/api/projects/demo/identity/members:batch")
@@ -356,7 +359,7 @@ class ProjectIdentityControllerTest {
                 "TESTER",
                 "PENDING",
                 "user-owner",
-                Instant.parse("2026-07-01T00:00:00Z"),
+                Instant.parse(VALID_INVITATION_EXPIRES_AT),
                 null,
                 Instant.parse("2026-06-25T13:50:00Z"),
                 Instant.parse("2026-06-25T13:50:00Z")
@@ -371,8 +374,8 @@ class ProjectIdentityControllerTest {
                         .header(RequestActorResolver.CURRENT_USER_HEADER, "user-dev")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"expiresAt":"2026-07-02T00:00:00Z"}
-                                """))
+                                {"expiresAt":"%s"}
+                                """.formatted(REISSUED_INVITATION_EXPIRES_AT)))
                 .andExpect(status().isForbidden());
 
         mockMvc.perform(post("/api/projects/demo/identity/invitations:expire")

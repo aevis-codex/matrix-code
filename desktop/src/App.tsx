@@ -268,7 +268,7 @@ function summarizeModelAnswer(answer: string) {
  * 构建随 Agent Composer 请求发送的工作台上下文。
  * 作用域：模型网关前端调用；场景：只发送阶段、最近文档和关键事件摘要，运行选项由后端统一补充。
  */
-function buildComposerContextBlocks(workbench: ProjectWorkbench, selectedRole: string): ContextBlock[] {
+function buildComposerContextBlocks(workbench: ProjectWorkbench, selectedRole: string, tokenEconomy: boolean): ContextBlock[] {
   const recentDocuments = workbench.documents
     .slice(0, 3)
     .map((document) => `${document.title}(${documentStateLabels[document.state]} v${document.version})`)
@@ -282,14 +282,14 @@ function buildComposerContextBlocks(workbench: ProjectWorkbench, selectedRole: s
     }
   ];
 
-  if (recentDocuments) {
+  if (!tokenEconomy && recentDocuments) {
     blocks.push({
       type: 'RECENT_DOCUMENTS',
       summary: recentDocuments,
       allowedByGate: true
     });
   }
-  if (recentEvents) {
+  if (!tokenEconomy && recentEvents) {
     blocks.push({
       type: 'RECENT_EVENTS',
       summary: recentEvents,
@@ -1891,7 +1891,7 @@ function App() {
         {
           actorUserId: currentActorId,
           instruction,
-          contextBlocks: buildComposerContextBlocks(currentWorkbench, currentSelectedRole),
+          contextBlocks: buildComposerContextBlocks(currentWorkbench, currentSelectedRole, composerIntentState.tokenEconomy),
           providerId: selectedModel?.providerId,
           model: selectedModel?.model,
           approvalMode: composerApprovalMode,

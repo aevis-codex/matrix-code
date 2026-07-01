@@ -72,6 +72,16 @@ public class LocalCommandService {
     }
 
     public ExecutionTask submit(String projectId, String workspaceId, String actorId, String command) {
+        return submit(projectId, workspaceId, actorId, command, "auto");
+    }
+
+    /**
+     * 提交本地命令任务并应用 Agent 工具权限模式。
+     *
+     * <p>作用域：本地执行审批边界；场景：Agent Composer 或编码智能体提交命令时，
+     * 将问询、自动或 Yolo 模式转化为真实审批决策。</p>
+     */
+    public ExecutionTask submit(String projectId, String workspaceId, String actorId, String command, String approvalMode) {
         command = requireText(command, "命令不能为空");
         actorId = requireText(actorId, "执行人不能为空");
         var workspace = workspaces.requireAuthorized(projectId, workspaceId);
@@ -84,7 +94,7 @@ public class LocalCommandService {
                 workspace.rootPath(),
                 containsUnsafeShellSyntax(command)
         );
-        var decision = approvalPolicy.decide(action);
+        var decision = approvalPolicy.decide(action, approvalMode);
         auditService.record(action, decision);
 
         if (decision == ApprovalDecision.ASK) {

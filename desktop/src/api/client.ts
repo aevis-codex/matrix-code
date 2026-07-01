@@ -1913,7 +1913,7 @@ export function writeLocalFile(
  */
 export function submitLocalCommand(
   projectId: string,
-  input: { workspaceId: string; actorId: string; command: string },
+  input: { workspaceId: string; actorId: string; command: string; approvalMode?: string },
   serverUrl = matrixCodeServerUrl()
 ): Promise<ExecutionTask> {
   return requestJson<ExecutionTask>(projectUrl(serverUrl, projectId, '/local-execution/commands'), {

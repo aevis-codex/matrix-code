@@ -141,7 +141,7 @@ public class LocalExecutionController {
             HttpServletRequest request
     ) {
         requestPermissionGuard.assertActor(request, command.actorId());
-        return commandService.submit(projectId, command.workspaceId(), command.actorId(), command.command());
+        return commandService.submit(projectId, command.workspaceId(), command.actorId(), command.command(), command.approvalMode());
     }
 
     /**
@@ -243,7 +243,7 @@ public class LocalExecutionController {
      *
      * <p>作用域：本地执行 API；场景：在授权工作区内执行测试、构建或诊断命令。</p>
      */
-    public record CommandRequest(String workspaceId, String actorId, String command) {
+    public record CommandRequest(String workspaceId, String actorId, String command, String approvalMode) {
     }
 
     /**

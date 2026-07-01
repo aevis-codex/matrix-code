@@ -1828,7 +1828,7 @@ describe('角色工作台 API 客户端', () => {
 
     await submitLocalCommand(
       'demo',
-      { workspaceId: 'workspace-1', actorId: 'user-dev', command: 'ssh prod' },
+      { workspaceId: 'workspace-1', actorId: 'user-dev', command: 'ssh prod', approvalMode: 'ask' },
       'http://localhost:8080'
     );
     await captureGitDiff('demo', { workspaceId: 'workspace-1' }, 'user-dev', 'http://localhost:8080');
@@ -1840,7 +1840,7 @@ describe('角色工作台 API 客户端', () => {
         'Content-Type': 'application/json',
         'X-MatrixCode-User-Id': 'user-dev'
       },
-      body: JSON.stringify({ workspaceId: 'workspace-1', actorId: 'user-dev', command: 'ssh prod' })
+      body: JSON.stringify({ workspaceId: 'workspace-1', actorId: 'user-dev', command: 'ssh prod', approvalMode: 'ask' })
     });
     expect(fetchMock).toHaveBeenCalledWith('http://localhost:8080/api/projects/demo/local-execution/git-diff', {
       method: 'POST',
