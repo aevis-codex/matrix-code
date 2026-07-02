@@ -660,7 +660,7 @@ function formatTimelineTime(occurredAt: string) {
 }
 
 /**
- * 展示角色智能体的实时输出预览和最近运行摘要。
+ * 展示角色智能体的本次请求预览和最近运行摘要。
  * 作用域：工作台中间主区域；场景：底部对话输入时即时预览，模型返回后展示真实响应摘要。
  */
 function AgentOutputConsole({
@@ -670,9 +670,6 @@ function AgentOutputConsole({
   composerDraft,
   composerSubmitState,
   currentModelRef,
-  documents,
-  events,
-  intentState,
   reasoningEffort,
   selectedRole
 }: {
@@ -682,15 +679,10 @@ function AgentOutputConsole({
   composerDraft: string;
   composerSubmitState: ComposerSubmitState;
   currentModelRef: string;
-  documents: DocumentSummary[];
-  events: ProjectEvent[];
-  intentState: ComposerIntentState;
   reasoningEffort: ComposerReasoningEffort;
   selectedRole: string;
 }) {
   const [answerExpanded, setAnswerExpanded] = useState(false);
-  const recentDocuments = documents.slice(0, 3);
-  const recentEvents = events.slice(0, 3);
   const liveDraft = summarizeComposerDraft(composerDraft);
   const answeredRequestId =
     composerSubmitState.status === 'answered'
@@ -698,11 +690,6 @@ function AgentOutputConsole({
       : composerSubmitState.status === 'streaming'
         ? composerSubmitState.submittedAt
         : composerSubmitState.status;
-  const intentLabels = [
-    intentState.plan ? '计划' : '',
-    intentState.goal ? '目标' : '',
-    intentState.tokenEconomy ? '省 token' : ''
-  ].filter(Boolean);
   const modelAnswer =
     composerSubmitState.status === 'answered'
       ? composerSubmitState.response.answer
@@ -733,12 +720,12 @@ function AgentOutputConsole({
     <section className="agent-output-console" aria-label="大模型输出台">
       <header className="agent-console-header">
         <div>
-          <p className="eyebrow">大模型输出台</p>
-          <h3>{selectedRole}智能体输出</h3>
+          <p className="eyebrow">Output</p>
+          <h3>{selectedRole}智能体</h3>
         </div>
-        <span>{submitStatusLabel} · 运行 {agentRuns.length.toLocaleString('zh-CN')} 次</span>
+        <span>{submitStatusLabel}</span>
       </header>
-      <section className={`agent-live-preview agent-live-preview--${composerSubmitState.status}`} aria-label="实时输出预览">
+      <section className={`agent-live-preview agent-live-preview--${composerSubmitState.status}`} aria-label="本次请求预览">
         <header>
           <div>
             <strong>
@@ -748,7 +735,7 @@ function AgentOutputConsole({
                   ? '模型流式回复'
                   : composerSubmitState.status === 'error'
                     ? '请求失败'
-                  : '实时上下文预览'}
+                  : '本次请求预览'}
             </strong>
             <span>{currentModelRef}</span>
           </div>
@@ -785,86 +772,29 @@ function AgentOutputConsole({
         ) : composerSubmitState.status === 'error' ? (
           <pre>{composerSubmitState.message}</pre>
         ) : (
-          <pre>{liveDraft || '等待下方对话输入。输入时这里会同步展示将发送给当前角色智能体的任务摘要。'}</pre>
+          <pre>{liveDraft || `等待输入。这里会预览将发送给${selectedRole}智能体的任务。`}</pre>
         )}
-        <dl className="agent-live-preview__meta">
-          <div>
-            <dt>角色</dt>
-            <dd>{selectedRole}</dd>
-          </div>
-          <div>
-            <dt>协作方式</dt>
-            <dd>{intentLabels.join('、') || '默认'}</dd>
-          </div>
-          <div>
-            <dt>上下文</dt>
-            <dd>{documents.length.toLocaleString('zh-CN')} 份文档 · {events.length.toLocaleString('zh-CN')} 条事件</dd>
-          </div>
-          {composerSubmitState.status === 'answered' ? (
-            <div>
-              <dt>用量</dt>
-              <dd>
-                命中 {composerSubmitState.response.usage.cacheHitTokens.toLocaleString('zh-CN')} · 输出{' '}
-                {composerSubmitState.response.usage.outputTokens.toLocaleString('zh-CN')}
-              </dd>
-            </div>
-          ) : null}
-        </dl>
       </section>
       {agentRuns.length ? (
         <ol className="agent-output-list">
-          {agentRuns.slice(0, 5).map((run) => {
-            const eventsForRun = agentRunEvents.filter((event) => event.runId === run.id).slice(0, 3);
-            return (
-              <li className="agent-output-item" key={run.id}>
-                <div>
-                  <strong>{run.goal}</strong>
-                  <span>
-                    {run.status} · {run.providerId}/{run.modelName} · {formatTimelineTime(run.updatedAt)}
-                  </span>
-                </div>
-                {run.summary ? <p>{run.summary}</p> : null}
-                {eventsForRun.length ? (
-                  <ul>
-                    {eventsForRun.map((event) => (
-                      <li key={event.id}>
-                        {formatTimelineTime(event.occurredAt)} · {event.eventTitle}
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-              </li>
-            );
-          })}
+          {agentRuns.slice(0, 3).map((run) => (
+            <li className="agent-output-item" key={run.id}>
+              <div>
+                <strong>{run.goal}</strong>
+                <span>
+                  {run.status} · {run.providerId}/{run.modelName} · {formatTimelineTime(run.updatedAt)}
+                </span>
+              </div>
+              {run.summary ? <p>{run.summary}</p> : null}
+            </li>
+          ))}
         </ol>
       ) : (
         <div className="agent-output-empty">
           <strong>暂无 Agent 运行</strong>
-          <span>完成一次需求、开发、测试或部署动作后，这里会显示模型输出和关键事件。</span>
+          <span>在下方发送消息后，这里会显示模型输出。</span>
         </div>
       )}
-      <div className="agent-output-digest" aria-label="输出摘要">
-        <section>
-          <h4>最近文档</h4>
-          {recentDocuments.length ? (
-            recentDocuments.map((document) => (
-              <p key={document.id}>
-                {document.title} · {documentStateLabels[document.state]} · v{document.version}
-              </p>
-            ))
-          ) : (
-            <p>暂无文档输出</p>
-          )}
-        </section>
-        <section>
-          <h4>关键动态</h4>
-          {recentEvents.length ? (
-            recentEvents.map((event) => <p key={event.id}>{event.message}</p>)
-          ) : (
-            <p>暂无关键动态</p>
-          )}
-        </section>
-      </div>
     </section>
   );
 }
@@ -934,7 +864,7 @@ function AgentComposer({
           aria-label="Agent 对话输入"
           id="agent-composer-input"
           onChange={(event) => onDraftChange(event.target.value)}
-          placeholder={`给${selectedRole}智能体发消息...（/ 命令 · @ 文档 · ! 终端）`}
+          placeholder={`给${selectedRole}智能体输入任务或问题...`}
           readOnly={submitting}
           rows={3}
           value={draft}
@@ -2012,6 +1942,12 @@ function App() {
   const modelOptions = readyModelRefs.length ? readyModelRefs : uniqueModelRefs([formatModelBindingRef(workbench.modelGateway.bindings[0])]);
   const currentComposerModelRef = composerModelRef || modelOptions[0];
   const composerSubmitting = composerSubmitState.status === 'sending' || composerSubmitState.status === 'streaming';
+  const composerIntentLabels = [
+    composerIntentState.plan ? '计划' : '',
+    composerIntentState.goal ? '目标' : '',
+    composerIntentState.tokenEconomy ? '省 token' : ''
+  ].filter(Boolean);
+  const composerContextSummary = `${workbench.documents.length.toLocaleString('zh-CN')} 份文档 · ${workbench.events.length.toLocaleString('zh-CN')} 条事件`;
   const roleWorkflowPanel = (
     <>
       {selectedRole === '产品' ? (
@@ -2066,32 +2002,6 @@ function App() {
           <h1 className="brand__name">MatrixCode</h1>
           <span className="brand__status">在线</span>
         </header>
-        <section className="project" aria-label="当前项目">
-          <p className="eyebrow">当前项目</p>
-          <h2 className="project__name">{workbench.projectName}</h2>
-          <p className="project__meta">项目编号 {workbench.projectId}</p>
-        </section>
-        <section className="actor-context" aria-label="当前操作者上下文">
-          <label className="actor-context__field">
-            <span>当前操作者</span>
-            <select
-              aria-label="当前操作者"
-              value={currentActorId}
-              onChange={(event) => {
-                const nextActorUserId = event.target.value;
-                setSelectedActorUserId(nextActorUserId);
-                storeCurrentActorUserId(nextActorUserId);
-                void refreshAgentRunUserAudit(nextActorUserId);
-              }}
-            >
-              {actorOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        </section>
         <RoleSwitcher
           activeRole={selectedRole}
           onRoleChange={setActiveRole}
@@ -2102,44 +2012,76 @@ function App() {
 
       <section className="workspace-main" aria-label="项目工作台">
         <header className="stage-header">
-          <div>
-            <p className="eyebrow">实时进度</p>
+          <div className="stage-header__title">
+            <p className="eyebrow">{workbench.projectName}</p>
             <h2>{workbench.currentStage}</h2>
-            <p>团队在同一工作台完成需求、交付、自测、缺陷、环境和验收流转。</p>
           </div>
           <div className="stage-header__actions">
+            <label className="actor-compact">
+              <span>操作者</span>
+              <select
+                aria-label="当前操作者"
+                value={currentActorId}
+                onChange={(event) => {
+                  const nextActorUserId = event.target.value;
+                  setSelectedActorUserId(nextActorUserId);
+                  storeCurrentActorUserId(nextActorUserId);
+                  void refreshAgentRunUserAudit(nextActorUserId);
+                }}
+              >
+                {actorOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
             <button
-              className="secondary-button config-button"
+              aria-label="诊断"
+              className="icon-button"
               onClick={() => setRuntimeDiagnosticsOpen(true)}
+              title="诊断"
               type="button"
             >
-              诊断
+              ⌁
             </button>
             <button
-              className="secondary-button config-button"
+              aria-label="文档"
+              className="icon-button"
               onClick={() => setDocumentCenterOpen(true)}
+              title="文档"
               type="button"
             >
-              文档
+              ◰
             </button>
             <button
-              className="secondary-button config-button"
+              aria-label="运行"
+              className="icon-button"
               onClick={() => setOperationsCenterOpen(true)}
+              title="运行"
               type="button"
             >
-              运行
+              ▶
             </button>
             <button
-              className="secondary-button config-button"
+              aria-label="工作流"
+              className="icon-button"
               onClick={() => setWorkflowPanelOpen(true)}
+              title="工作流"
               type="button"
             >
-              工作流
+              ⧉
             </button>
-            <button className="secondary-button config-button" onClick={() => setConfigDialogOpen(true)} type="button">
-              配置
+            <button
+              aria-label="配置"
+              className="icon-button"
+              onClick={() => setConfigDialogOpen(true)}
+              title="配置"
+              type="button"
+            >
+              ⚙
             </button>
-            <span className={`stage-badge ${refreshing ? 'stage-badge--muted' : ''}`}>
+            <span className={`stage-badge ${refreshing ? 'stage-badge--muted' : ''}`} title={refreshing ? '同步中' : '自动同步'}>
               {refreshing ? '刷新中' : '自动同步'}
             </span>
           </div>
@@ -2192,9 +2134,6 @@ function App() {
           composerDraft={composerDraft}
           composerSubmitState={composerSubmitState}
           currentModelRef={currentComposerModelRef}
-          documents={workbench.documents}
-          events={workbench.events}
-          intentState={composerIntentState}
           reasoningEffort={composerReasoningEffort}
           selectedRole={selectedRole}
         />
@@ -2231,9 +2170,12 @@ function App() {
       <WorkbenchStatusBar
         agentRunEvents={workbenchState.agentRunEvents}
         agentRuns={workbenchState.agentRuns}
+        composerContextSummary={composerContextSummary}
+        composerIntentLabels={composerIntentLabels}
         metrics={workbench.metrics}
         modelGateway={workbench.modelGateway}
         runtimeNotificationUnreadCount={unreadRuntimeNotificationCount}
+        selectedRole={selectedRole}
       />
       {workflowPanelOpen ? (
         <div className="config-dialog-backdrop">

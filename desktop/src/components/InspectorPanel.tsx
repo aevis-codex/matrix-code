@@ -435,7 +435,11 @@ function formatCost(value: number) {
 type WorkbenchStatusBarProps = Pick<
   InspectorPanelProps,
   'agentRunEvents' | 'agentRuns' | 'metrics' | 'modelGateway' | 'runtimeNotificationUnreadCount'
->;
+> & {
+  composerContextSummary?: string;
+  composerIntentLabels?: string[];
+  selectedRole?: string;
+};
 
 /**
  * 在主工作台底部展示一行动态运行状态。
@@ -446,9 +450,12 @@ type WorkbenchStatusBarProps = Pick<
 export function WorkbenchStatusBar({
   agentRunEvents = [],
   agentRuns = [],
+  composerContextSummary = '暂无上下文',
+  composerIntentLabels = [],
   metrics,
   modelGateway,
-  runtimeNotificationUnreadCount = 0
+  runtimeNotificationUnreadCount = 0,
+  selectedRole = '未选择角色'
 }: WorkbenchStatusBarProps) {
   const cachePercent = Math.round(metrics.cacheHitRate * 100);
   const currentBinding = modelGateway.bindings[0];
@@ -463,9 +470,13 @@ export function WorkbenchStatusBar({
     : [];
   const modelSummary = currentBinding ? `${currentBinding.providerId} / ${currentBinding.model}` : '暂无模型绑定';
   const agentSummary = latestAgentRun ? `${agentRunStatusLabels[latestAgentRun.status]} · ${latestAgentRun.goal}` : '暂无 Agent 运行';
+  const composerIntentSummary = composerIntentLabels.length ? composerIntentLabels.join('、') : '默认';
   const recentCacheHitPercent = recentRequest ? Math.round(recentRequest.usage.cacheHitRate * 100) : null;
   const prefixSummary = recentRequest?.usage.stablePrefixHash ? `prefix ${recentRequest.usage.stablePrefixHash}` : 'prefix 无';
   const fullSummary = [
+    `角色 ${selectedRole}`,
+    `协作方式 ${composerIntentSummary}`,
+    `上下文 ${composerContextSummary}`,
     agentSummary,
     latestAgentRun?.failureSummary ? `失败摘要 ${latestAgentRun.failureSummary}` : '',
     latestAgentRun?.retryable ? '恢复策略 可重试' : '',
@@ -489,6 +500,13 @@ export function WorkbenchStatusBar({
         <span className="workbench-statusbar__dot" aria-hidden="true" />
         <span className="workbench-statusbar__label">当前模型</span>
         <strong className="workbench-statusbar__value workbench-statusbar__value--accent">{modelSummary}</strong>
+      </div>
+      <span className="workbench-statusbar__divider" aria-hidden="true" />
+      <div aria-label="本次请求" className="workbench-statusbar__group workbench-statusbar__group--request">
+        <span className="workbench-statusbar__label">本次请求</span>
+        <span className="workbench-statusbar__item">角色 {selectedRole}</span>
+        <span className="workbench-statusbar__item">协作方式 {composerIntentSummary}</span>
+        <span className="workbench-statusbar__item">上下文 {composerContextSummary}</span>
       </div>
       <span className="workbench-statusbar__divider" aria-hidden="true" />
       <div aria-label="Agent 运行" className="workbench-statusbar__group workbench-statusbar__group--agent">

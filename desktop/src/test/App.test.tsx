@@ -1518,6 +1518,10 @@ describe('MatrixCode 桌面工作台', () => {
     const 底部状态栏 = within(screen.getByLabelText('工作台底部状态'));
     expect(底部状态栏.getByText('当前模型')).toBeTruthy();
     expect(底部状态栏.getByText(/local-deterministic\s*\/\s*matrixcode-local-product/)).toBeTruthy();
+    expect(底部状态栏.getByText('本次请求')).toBeTruthy();
+    expect(底部状态栏.getByText(/角色\s*产品/)).toBeTruthy();
+    expect(底部状态栏.getByText(/协作方式\s*省 token/)).toBeTruthy();
+    expect(底部状态栏.getByText(/上下文\s*0\s*份文档\s*·\s*2\s*条事件/)).toBeTruthy();
     expect(底部状态栏.getByText('运行指标')).toBeTruthy();
     expect(底部状态栏.getByText(/请求\s*2/)).toBeTruthy();
     expect(底部状态栏.getByText(/费用\s*0.128\s*CNY/)).toBeTruthy();
@@ -1536,8 +1540,9 @@ describe('MatrixCode 桌面工作台', () => {
     render(<App />);
 
     expect(await screen.findByText('支付系统重构')).toBeTruthy();
-    const 实时预览 = within(screen.getByLabelText('实时输出预览'));
-    expect(实时预览.getByText(/等待下方对话输入/)).toBeTruthy();
+    const 实时预览 = within(screen.getByLabelText('本次请求预览'));
+    expect(实时预览.getByText(/等待输入/)).toBeTruthy();
+    expect(screen.getByLabelText('Agent 对话输入').getAttribute('placeholder')).toBe('给产品智能体输入任务或问题...');
 
     fireEvent.change(screen.getByLabelText('Agent 对话输入'), {
       target: { value: '请梳理下一阶段交付任务' }
@@ -1711,7 +1716,7 @@ describe('MatrixCode 桌面工作台', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: '发送给角色智能体' }));
 
-    const 输出台 = within(await screen.findByLabelText('实时输出预览'));
+    const 输出台 = within(await screen.findByLabelText('本次请求预览'));
     expect(await 输出台.findByText('请求失败')).toBeTruthy();
     expect(输出台.queryByText('实时上下文预览')).toBeNull();
     expect(输出台.getByText('团队服务器请求失败：404')).toBeTruthy();
@@ -1749,7 +1754,7 @@ describe('MatrixCode 桌面工作台', () => {
     fireEvent.click(screen.getByRole('button', { name: '发送给角色智能体' }));
 
     expect(await screen.findByText('模型回复')).toBeTruthy();
-    const 实时预览 = within(screen.getByLabelText('实时输出预览'));
+    const 实时预览 = within(screen.getByLabelText('本次请求预览'));
     expect(实时预览.getByLabelText('模型回复摘要')).toBeTruthy();
     expect(实时预览.queryByText(长回复)).toBeNull();
 

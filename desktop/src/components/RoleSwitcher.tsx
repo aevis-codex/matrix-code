@@ -21,6 +21,7 @@ export function RoleSwitcher({ roles, activeRole, pendingApprovalCount = 0, onRo
             className={`role-item ${active ? 'role-item--active' : ''}`}
             key={role.name}
             onClick={() => onRoleChange(role.name)}
+            title={`${role.name}：${role.state}`}
             type="button"
           >
             <span className="role-item__mark">{role.name.slice(0, 1)}</span>
